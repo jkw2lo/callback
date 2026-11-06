@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Callback</title>
+  <meta name="description" content="A job hunt board: every posting, its stage, and who opened your link.">
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#f5f2ea" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#191a18" media="(prefers-color-scheme: dark)">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="currentColor"/><path d="M22.5 11.2A8 8 0 1 0 22.5 20.8" fill="none" stroke="var(--bg)" stroke-width="3.4" stroke-linecap="round"/></svg>
+      <div>
+        <h1>Callback</h1>
+        <p id="summary" class="summary"></p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <input id="search" class="search" type="search" placeholder="Search jobs" aria-label="Search jobs" autocomplete="off">
+      <button id="addBtn" class="btn solid" type="button">Add job</button>
+      <button id="menuBtn" class="btn icon" type="button" aria-label="Sync, backup and extension">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5.5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="18.5" r="1.6"/></svg>
+        <i id="menuDot" class="dot" hidden></i>
+      </button>
+    </div>
+  </header>
+
+  <div id="banner" class="banner" role="status" hidden></div>
+  <nav id="tabs" class="tabs" aria-label="Stages"></nav>
+  <main id="board" class="board"></main>
+
+  <dialog id="jobDialog" class="sheet" aria-labelledby="jobHeading">
+    <form id="jobForm" method="dialog" novalidate>
+      <header class="sheet-head">
+        <h2 id="jobHeading">Add job</h2>
+        <span id="savedNote" class="saved-note" aria-live="polite"></span>
+        <button id="jobClose" class="btn ghost" type="button">Done</button>
+      </header>
+
+      <div id="dupNote" class="note warn" hidden></div>
+
+      <div class="fields">
+        <label class="field"><span>Company</span><input name="company" maxlength="120" autocomplete="off"></label>
+        <label class="field"><span>Role</span><input name="title" maxlength="160" autocomplete="off"></label>
+        <label class="field"><span>Location</span><input name="location" maxlength="120" autocomplete="off"></label>
+        <label class="field"><span>Pay</span><input name="pay" maxlength="80" autocomplete="off"></label>
+        <label class="field wide">
+          <span>Posting link <a id="urlOpen" class="field-link" target="_blank" rel="noopener noreferrer" hidden>Open</a></span>
+          <input name="url" type="url" maxlength="2000" inputmode="url" autocomplete="off" placeholder="https://">
+        </label>
+        <label class="field"><span>Stage</span><select name="stage"></select></label>
+        <label class="field"><span>Follow up on</span><input name="followUp" type="date"></label>
+        <label class="field wide">
+          <span>Resume version sent</span>
+          <input name="resume" maxlength="80" list="resumeVersions" autocomplete="off" placeholder="Resume 20260901">
+          <datalist id="resumeVersions"></datalist>
+        </label>
+      </div>
+
+      <section id="linkSection" class="link-section" hidden>
+        <h3>Your link for this job</h3>
+        <p class="hint">Send this one instead of your usual portfolio link, and its visits show up here.</p>
+        <div class="link-row">
+          <span>Portfolio</span><code id="linkHome"></code>
+          <button class="btn small" type="button" data-copy="home">Copy</button>
+        </div>
+        <div class="link-row">
+          <span>Resume</span><code id="linkResume"></code>
+          <button class="btn small" type="button" data-copy="resume">Copy</button>
+        </div>
+        <p id="viewsLine" class="views-line"></p>
+      </section>
+
+      <label class="field wide"><span>Notes</span><textarea name="notes" rows="4" maxlength="20000"></textarea></label>
+      <label class="field wide"><span>Job description</span><textarea name="jd" rows="10" maxlength="30000" placeholder="Paste it here so you still have it after the posting comes down."></textarea></label>
+
+      <p id="historyLine" class="history" hidden></p>
+
+      <footer class="sheet-foot">
+        <button id="jobDelete" class="btn ghost danger" type="button" hidden>Delete</button>
+        <span class="grow"></span>
+        <button id="jobCancel" class="btn ghost" type="button" hidden>Cancel</button>
+        <button id="jobSave" class="btn solid" type="submit" hidden>Save job</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="menuDialog" class="sheet narrow" aria-labelledby="menuHeading">
+    <header class="sheet-head">
+      <h2 id="menuHeading">Settings</h2>
+      <span class="saved-note"></span>
+      <button id="menuClose" class="btn ghost" type="button">Done</button>
+    </header>
+    <div id="menuBody"></div>
+  </dialog>
+
+  <input id="restoreFile" type="file" accept="application/json,.json" hidden>
+
+  <script src="js/store.js"></script>
+  <script src="js/sync.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

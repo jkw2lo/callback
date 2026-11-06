@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Callback",
+  "version": "0.1.0",
+  "description": "Right-click a job posting to add it to your Callback board.",
+  "minimum_chrome_version": "114",
+  "permissions": ["activeTab", "contextMenus", "scripting", "storage"],
+  "host_permissions": [
+    "https://jkw2lo.github.io/callback/*",
+    "http://127.0.0.1:8765/callback/*"
+  ],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://jkw2lo.github.io/callback/*",
+        "http://127.0.0.1:8765/callback/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Add this job to Callback",
+    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
+  },
+  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+}
