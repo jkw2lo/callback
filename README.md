@@ -19,9 +19,16 @@ Plain HTML/CSS/JS with no build step, so it deploys straight to GitHub Pages.
 
 ## Install the right-click menu (desktop Chrome)
 
-1. Keep this folder somewhere permanent.
-2. Open `chrome://extensions` and turn on **Developer mode**.
-3. Click **Load unpacked** and choose the `extension` folder.
+1. [Download the extension](https://jkw2lo.github.io/callback/callback-extension.zip), which is
+   also linked under the board's ⋮ menu.
+2. Unzip it and keep the `callback-extension` folder somewhere permanent, because Chrome loads it from there.
+3. Open `chrome://extensions` and turn on **Developer mode**.
+4. Click **Load unpacked** and choose the `callback-extension` folder.
+
+To update it, replace that folder with a newer download and press the reload icon on the
+extension's card in `chrome://extensions`.
+
+After changing anything in `extension/`, run `tools/package-extension.sh` to rebuild the zip.
 
 Right-click a job posting and choose **Add to Callback**, or click the extension's toolbar icon.
 If the description comes out wrong, highlight the right text first and then right-click:

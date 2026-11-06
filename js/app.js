@@ -386,9 +386,11 @@
       '<section class="menu-part"><h3>Account</h3>' + accountHtml() + "</section>" +
       '<section class="menu-part"><h3>Right-click capture</h3>' +
       (extensionSeen ? "<p>The extension is connected. Right-click any posting and choose <b>Add to Callback</b>.</p>"
-        : "<p>Add it in desktop Chrome:</p><ol><li>Download or clone this project, and keep the folder somewhere permanent.</li>" +
+        : "<p>Add it in desktop Chrome:</p>" +
+          '<div class="actions"><a class="btn solid" href="callback-extension.zip" download>Download the extension</a></div>' +
+          "<ol><li>Unzip it and keep the <b>callback-extension</b> folder somewhere permanent, because Chrome loads it from there.</li>" +
           "<li>Open <b>chrome://extensions</b> and turn on <b>Developer mode</b>.</li>" +
-          "<li>Click <b>Load unpacked</b> and choose the <b>extension</b> folder.</li></ol>") +
+          "<li>Click <b>Load unpacked</b> and choose the <b>callback-extension</b> folder.</li></ol>") +
       "</section>" +
       '<section class="menu-part"><h3>Backup</h3><p>Everything you\'ve saved, as one file. Restoring adds to the board and keeps whichever copy of a job changed last.</p>' +
       '<div class="actions"><button class="btn" type="button" data-menu="backup">Download backup</button>' +

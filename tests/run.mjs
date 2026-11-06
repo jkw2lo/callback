@@ -9,7 +9,8 @@
 // Chrome won't let a script click its native right-click menu, and activeTab is only granted by
 // a real click. So the menu's click is dispatched to the extension's own handler, and the test
 // copy of the extension has wider host access. Those two things need trying by hand.
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
@@ -403,6 +404,23 @@ try {
   await first.emulateMedia({ colorScheme: "dark" });
   await first.screenshot({ path: join(RESULTS, "welcome-dark.png") });
   await first.emulateMedia({ colorScheme: "light" });
+
+  section("Downloading the extension");
+  await first.locator('.welcome [data-act="menu"]').click();
+  await first.screenshot({ path: join(RESULTS, "setup.png") });
+  const fetching = first.waitForEvent("download");
+  await first.locator('#menuBody a[download]').click();
+  const download = await fetching;
+  eq("the setup steps download the zip", download.suggestedFilename(), "callback-extension.zip");
+  const zipPath = await download.path();
+  const extDir = join(ROOT, "extension");
+  const files = readdirSync(extDir, { recursive: true }).filter((f) => statSync(join(extDir, f)).isFile() && !f.endsWith(".DS_Store"));
+  const differs = files.filter((f) => {
+    try { return !execFileSync("unzip", ["-p", zipPath, "callback-extension/" + f], { maxBuffer: 1 << 24 }).equals(readFileSync(join(extDir, f))); }
+    catch (e) { return true; }
+  });
+  check("the zip matches extension/ (if not, run tools/package-extension.sh)", files.includes("manifest.json") && !differs.length, differs);
+  await first.locator("#menuClose").click();
 
   section("Sync and visits (Firebase stand-in)");
   // Installed before the page's scripts, so Sync uses it instead of downloading the SDK
