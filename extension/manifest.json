@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Callback",
-  "version": "0.3.0",
-  "description": "Save job postings to your Callback board, and fill application forms from your saved info one click at a time.",
+  "version": "0.4.0",
+  "description": "Save job postings to your Callback board, see how each fits your experience, and fill applications from your saved info.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwKfnEdWaDujHBTT3nvxYYetNW/5xERskZ5LZFfo2MQf50q34/4pLXJSVv2VIsT80CZg76PtoloKKje94ky8rbb+liOyfeiZ+VsY8Y+y9LcYrtD/uUkHS2yQ+PM0bTY/dRU3QqrKKYktiXyCFw1fwUeCzxRAVM+TjQutGJHFkv5tVtPVWOWPu37ufvnJmBUyACPbg/ovrXPwlpOSVb3t4+5XjzOk5xxc1GKjjbbA+PeOgYmH/o7yIykblM88NQ/tm/sCnSu7oxe7SbcXDDOjqlhW9lv0QtHE2XIMeXzUDB0ErEVzkhGuJDIoUtMJcNUhoeMp1SXJz7tUG/UveeSgZiQIDAQAB",
   "minimum_chrome_version": "116",
   "permissions": [
@@ -17,6 +17,7 @@
   "host_permissions": [
     "https://jkw2lo.github.io/callback/*",
     "http://127.0.0.1:8765/callback/*",
+    "https://api.anthropic.com/*",
     "https://job-boards.greenhouse.io/*",
     "https://boards.greenhouse.io/*",
     "https://job-boards.eu.greenhouse.io/*",

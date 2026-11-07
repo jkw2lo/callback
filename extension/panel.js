@@ -68,7 +68,7 @@
         S.access = "none";
       }
     }
-    if (S.tabId === tabId) render();
+    if (S.tabId === tabId) { render(); tabChanged(); }
   }
   async function turnOnSite() {
     var origin = new URL(S.pageUrl).origin;
@@ -561,7 +561,8 @@
     } else {
       view.append(h("div", { cls: "card", id: "noFormCard" },
         h("h2", { text: "No form on this page" }),
-        h("p", { cls: "muted", text: "Open the application form. Many postings have an Apply button first." })));
+        h("p", { cls: "muted", text: "Open the application form. Many postings have an Apply button first." }),
+        h("div", { cls: "row" }, h("button", { cls: "btn", type: "button", id: "seeFit", text: "See how this job fits you", onclick: function () { showView("fit"); } }))));
     }
 
     if (S.pass) return;
@@ -577,13 +578,16 @@
   }
   function showView(which) {
     S.view = which;
-    document.getElementById("tabFill").setAttribute("aria-selected", which === "fill");
-    document.getElementById("tabInfo").setAttribute("aria-selected", which === "info");
-    view.hidden = which !== "fill";
-    document.getElementById("infoView").hidden = which !== "info";
+    [["fill", "tabFill", "fillView"], ["fit", "tabFit", "fitView"], ["info", "tabInfo", "infoView"]].forEach(function (v) {
+      document.getElementById(v[1]).setAttribute("aria-selected", which === v[0]);
+      document.getElementById(v[2]).hidden = which !== v[0];
+    });
     if (which === "fill") render();
+    else if (which === "fit") { if (window.FitPanel) window.FitPanel.render(); }
     else if (window.Info) window.Info.render();
   }
+  // The Fit tab follows the same tab as Fill
+  function tabChanged() { window.dispatchEvent(new CustomEvent("callback-tab")); }
 
   // ---------- saving ----------
   var PANEL_ID = String(Math.random());
@@ -600,6 +604,7 @@
   // ---------- start ----------
   document.getElementById("tabFill").addEventListener("click", function () { showView("fill"); });
   document.getElementById("tabInfo").addEventListener("click", function () { showView("info"); });
+  document.getElementById("tabFit").addEventListener("click", function () { showView("fit"); });
   // Up and down walk the suggestions, as Enter on one fills it
   view.addEventListener("keydown", function (e) {
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
@@ -627,7 +632,7 @@
   });
   chrome.tabs.onUpdated.addListener(function (tabId, change) {
     if (tabId !== S.tabId) return;
-    if (change.url) { S.pageUrl = change.url; renderJob(); }
+    if (change.url) { S.pageUrl = change.url; renderJob(); tabChanged(); }
     if (change.status === "complete" && !S.ports.size) attach(tabId);
   });
 
@@ -637,7 +642,9 @@
     profile: function () { return S.profile; },
     replaceProfile: function (p) { S.profile = p; Profile.save(p, PANEL_ID); },
     saveProfile: saveProfile,
-    showView: showView
+    showView: showView,
+    turnOnSite: turnOnSite,
+    formFields: function () { var n = 0; S.frames.forEach(function (f) { n += f.total || 0; }); return n; }
   };
 
   (async function () {

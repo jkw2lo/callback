@@ -9,7 +9,11 @@
   function blank() {
     var basics = {};
     BASICS.forEach(function (k) { basics[k] = ""; });
-    return { basics: basics, jobs: [], education: [], answers: {}, texts: {}, saved: [], learned: {} };
+    return { basics: basics, jobs: [], education: [], answers: {}, texts: {}, saved: [], learned: {}, prefs: blankPrefs() };
+  }
+  // What you're looking for, for the Fit tab
+  function blankPrefs() {
+    return { payMin: "", payMax: "", currency: "USD", styles: { remote: true, hybrid: true, onsite: true }, places: "" };
   }
   function normalize(p) {
     var out = blank();
@@ -17,6 +21,14 @@
     BASICS.forEach(function (k) { if (p.basics && typeof p.basics[k] === "string") out.basics[k] = p.basics[k]; });
     ["jobs", "education", "saved"].forEach(function (k) { if (Array.isArray(p[k])) out[k] = p[k].filter(function (x) { return x && typeof x === "object"; }); });
     ["answers", "texts", "learned"].forEach(function (k) { if (p[k] && typeof p[k] === "object" && !Array.isArray(p[k])) out[k] = p[k]; });
+    if (p.prefs && typeof p.prefs === "object") {
+      var pr = p.prefs;
+      out.prefs.payMin = pr.payMin == null ? "" : String(pr.payMin);
+      out.prefs.payMax = pr.payMax == null ? "" : String(pr.payMax);
+      if (/^[A-Z]{3}$/.test(pr.currency || "")) out.prefs.currency = pr.currency;
+      if (pr.styles && typeof pr.styles === "object") ["remote", "hybrid", "onsite"].forEach(function (k) { if (typeof pr.styles[k] === "boolean") out.prefs.styles[k] = pr.styles[k]; });
+      if (typeof pr.places === "string") out.prefs.places = pr.places;
+    }
     return out;
   }
   function load() {

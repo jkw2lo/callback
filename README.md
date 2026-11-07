@@ -1,8 +1,8 @@
 # Callback
 
 A job hunt board. Right-click a posting to save it, send each company its own tracked link
-to your portfolio, and see whether they opened it. On the application form, a side panel
-suggests your saved info for each field, and one click fills it.
+to your portfolio, and see whether they opened it. On a posting, a side panel shows how the job
+fits your experience, line by line. On the application form, it fills in your saved info.
 
 Plain HTML/CSS/JS with no build step, so it deploys straight to GitHub Pages.
 
@@ -79,6 +79,38 @@ notes or descriptions), sent by the board, so it can match a form to a job.
 Tested against live Greenhouse, Lever and Ashby forms. Workday needs an account to reach its forms, so its
 sections and list buttons have only been tested on a copy built to match. The other portals haven't been tried.
 
+## Job fit
+
+Open the side panel on a job posting and the **Fit** tab shows a report card. A posting with no
+application form opens on it by itself.
+
+- **Fit score and callback chance:** how much of what the job asks your saved experience covers,
+  with requirements counting most, and a rough Low, Medium or High chance of a callback.
+- **Pay:** the job's range drawn against yours (set it under My info → What you're looking for).
+- **Level:** where the job sits from Entry to Director+, against your level, with the years it asks for.
+- **How technical:** from the tools and skills it names.
+- **Location:** remote, hybrid or on-site and where, against your work styles and places.
+- **Line by line:** each requirement is a fit, a partial fit or a gap, with the reason. The same
+  lines are marked on the page in green, amber and red; hover one for its reason, or click it in the
+  panel to scroll to it. The marks come off when you close the panel.
+
+**Built-in estimate:** free, instant and private. It matches the words in each line against your work
+history, education, skills and summary, weighting named tools and skills over ordinary words. It
+can't tell that different wording means the same experience, so lines about how you work ("leads with
+humility") are left unjudged, and the scores are rough.
+
+**Claude's reading (optional):** paste your own Claude API key under My info → Claude analysis, then press
+**Analyze with Claude** on a posting. Claude judges each line by meaning and gives its own score, level,
+callback chance and summary; pay and location still come from the rules. It sends the posting with your
+work history, education, skills and summary, never your contact details or self-ID answers. It uses Claude
+Opus 5.5 by default (about 10¢ a posting, billed to your key), or pick Sonnet 5.5 or Haiku 5.5 for less.
+Results are kept for the 40 most recent postings, so reopening one doesn't cost again. The key stays in the
+extension's storage, apart from your info and its downloaded copies.
+
+On sites that aren't job portals (LinkedIn, Indeed, company pages), open the panel from the toolbar icon
+so it can read the page, or use **Turn on for this site**. To judge only part of a page, highlight it and
+press **Refresh**.
+
 ## Links and visits
 
 Links point at the Projects site (`https://jkw2lo.github.io/projects/?for=<tag>`), which
@@ -142,6 +174,9 @@ extension/            the Chrome extension
   panel.html, .js     the side panel's Fill tab
   info.js             the side panel's My info tab
   match.js            works out what a field is asking and ranks your info for it
+  fit.js              how a posting fits your experience, built-in or from Claude
+  fitpanel.js         the side panel's Fit tab
+  jd.js               marks the job description's lines on the page
   profile.js          your saved info, and importing your resume
 tests/                end-to-end tests (autofill.mjs has the forms)
 ```

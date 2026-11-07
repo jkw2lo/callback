@@ -130,6 +130,20 @@ export const FORMS = {
   "https://jobs.lever.co/picky/1/apply": page("<title>x</title>",
     select("q_school", "School", "Harvard|Yale") + '<label for="z">Email</label><input id="z"><script>document.getElementById("z").addEventListener("input",(e)=>{e.target.value="";});</script>' + QUIRKS),
 
+  // A posting with no form: the Fit tab's report card
+  "https://job-boards.greenhouse.io/acme/jobs/9": page("<title>Senior Data Engineer at Acme</title>",
+    '<h1>Senior Data Engineer</h1><div class="job__location">Remote (US)</div><div class="job__description">' +
+    '<p>Acme builds tools for logistics teams, and we are growing quickly across North America.</p>' +
+    '<h3>Requirements</h3><ul>' +
+    '<li id="sql">3+ years of experience with SQL and Python</li>' +
+    '<li id="k8s">Experience with <b>Kubernetes</b> and Terraform</li>' +
+    '<li id="yrs">15+ years leading engineering organizations</li>' +
+    '<li id="deg">Bachelor&#39;s degree in computer science or a related field</li></ul>' +
+    '<h3>Nice to have</h3><ul><li id="tool">Familiarity with Python data tooling and dashboards</li></ul>' +
+    '<h3>Benefits</h3><ul><li id="ben">Health insurance and a generous 401k match for everyone</li></ul>' +
+    '<p>The pay range for this role is $150,000 - $180,000 per year.</p>' +
+    '<p>We are an equal opportunity employer and value diversity at our company.</p></div>'),
+
   // A posting embedded from a portal: the form is in a frame
   "https://careers.embedded.example/job": page("<title>Careers</title>", '<h1>Careers</h1><iframe id="f" src="https://job-boards.greenhouse.io/embedded/jobs/1" style="width:100%;height:500px"></iframe>'),
   "https://job-boards.greenhouse.io/embedded/jobs/1": page("<title>Job</title>", '<form><label for="e">Email</label><input id="e"></form>')
@@ -592,6 +606,94 @@ export async function runAutofill({ context, sw, check, eq, section, RESULTS, RO
   eq("...and creates no elements", await hostile.panel.locator("#fillView img").count(), 0);
   check("...and runs nothing", await hostile.panel.evaluate(() => !window.__pwned));
   await closeAll(hostile);
+
+  section("Fit: the report card");
+  await sw.evaluate(async () => {
+    const { profile } = await chrome.storage.local.get("profile");
+    profile.prefs = { payMin: "140000", payMax: "170000", currency: "USD", styles: { remote: true, hybrid: true, onsite: false }, places: "New York" };
+    await chrome.storage.local.set({ profile });
+  });
+  const claudeCalls = [];
+  let claudeReply = null;
+  await context.route("https://api.anthropic.com/**", async (r) => {
+    claudeCalls.push({ headers: r.request().headers(), body: JSON.parse(r.request().postData() || "{}") });
+    const reply = claudeReply || { status: 500, body: {} };
+    await r.fulfill({ status: reply.status, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify(reply.body) });
+  });
+  const post = await open("https://job-boards.greenhouse.io/acme/jobs/9");
+  await post.panel.waitForSelector("#reportCard", { timeout: 8000 });
+  check("a posting with no form opens on its report card", await post.panel.evaluate(() => Panel.state.view === "fit"));
+  const score = await post.panel.locator("#fitScore").textContent();
+  check("it gives a fit score", /^\d+%$/.test(score), score);
+  check("...and a callback chance", ["Low", "Medium", "High"].includes(await post.panel.locator("#callbackChance").textContent()));
+  const reportText = await post.panel.locator("#reportCard").textContent();
+  check("pay is placed against your range", reportText.includes("$150k–$180k") && reportText.includes("In your range"), reportText);
+  check("remote work matches your styles", reportText.includes("Remote suits you"));
+  check("the years asked are compared with yours", reportText.includes("Asks 15+ years"));
+  check("it says the estimate is built-in", reportText.includes("Built-in estimate"));
+  const gapsText = await post.panel.locator("#gapLines").textContent();
+  check("missing experience is listed as a gap", gapsText.includes("Kubernetes") && gapsText.includes("15+ years"), gapsText);
+  check("matching experience is listed as a fit", (await post.panel.locator("#fitLines").textContent()).includes("SQL and Python"));
+  check("benefits and legal text aren't judged", !(await post.panel.locator("#linesCard").textContent()).includes("401k"));
+  await post.panel.waitForFunction(() => FitPanel.state.marked > 0);
+  const marks = await post.form.evaluate(() => Object.fromEntries(["sql", "k8s", "yrs", "deg", "ben"].map((id) => [id, document.getElementById(id).getAttribute("data-callback-fit")])));
+  eq("lines are marked on the page", JSON.stringify(marks), JSON.stringify({ sql: "strong", k8s: "gap", yrs: "gap", deg: "strong", ben: null }));
+  check("...each with its reason on hover", (await post.form.getAttribute("#k8s", "title")).startsWith("✕ Gap: Not in your saved experience"));
+  check("...and a line split by formatting is still found", marks.k8s === "gap");
+  await post.panel.screenshot({ path: join(RESULTS, "panel-fit.png"), fullPage: true });
+  await post.form.screenshot({ path: join(RESULTS, "page-marked.png") });
+  await post.panel.locator("#markToggle").uncheck();
+  await post.form.waitForFunction(() => !document.querySelector("[data-callback-fit]"));
+  check("marks can be turned off", true);
+  await post.panel.locator("#markToggle").check();
+  await post.form.waitForFunction(() => document.querySelectorAll("[data-callback-fit]").length > 0);
+
+  section("Fit: Claude's reading");
+  check("without a key, it explains the option", (await post.panel.locator("#claudeCard").textContent()).includes("your own Claude API key"));
+  await post.panel.locator("#addKey").click();
+  await post.panel.locator('[data-setting="claudeKey"]').fill("sk-ant-test-0000");
+  await post.panel.locator('[data-setting="claudeKey"]').press("Tab");
+  await post.panel.waitForFunction(() => chrome.storage.local.get("settings").then((r) => r.settings && r.settings.claudeKey === "sk-ant-test-0000"));
+  check("the key is kept apart from your info", !JSON.stringify(await saved()).includes("sk-ant-test"));
+  await post.panel.locator("#tabFit").click();
+  await post.panel.waitForSelector("#runClaude");
+  check("the button says roughly what it costs", /about \d+¢/.test(await post.panel.locator("#runClaude").textContent()));
+  const lineNo = (t) => post.panel.evaluate((x) => FitPanel.state.report.lines.find((l) => l.text.includes(x)).i, t);
+  claudeReply = { status: 200, body: {
+    id: "msg_test", type: "message", role: "assistant", model: "claude-opus-5-5", stop_reason: "end_turn",
+    usage: { input_tokens: 4000, output_tokens: 3000 },
+    content: [{ type: "text", text: JSON.stringify({
+      fit: 81, callback: "high", callbackWhy: "Strong on the core stack.", level: 3, technical: 72, summary: "Your SQL and Python work is a direct match. Infrastructure tooling is the gap.",
+      lines: [{ i: await lineNo("SQL and Python"), verdict: "strong", note: "Years of SQL and Python at Globex." }, { i: await lineNo("Kubernetes"), verdict: "partial", note: "Shipped services, but no Kubernetes named." }]
+    }) }]
+  } };
+  await post.panel.locator("#runClaude").click();
+  await post.panel.waitForFunction(() => FitPanel.state.report && FitPanel.state.report.source === "claude");
+  eq("Claude's fit score replaces the estimate", await post.panel.locator("#fitScore").textContent(), "81%");
+  check("...with its reasoning and cost shown", (await post.panel.locator("#reportCard").textContent()).includes("Infrastructure tooling is the gap") && (await post.panel.locator("#reportCard").textContent()).includes("Opus 5.5, 8¢"));
+  await post.form.waitForFunction(() => document.getElementById("k8s").getAttribute("data-callback-fit") === "partial");
+  check("...and its line verdicts replace the marks", true);
+  const call = claudeCalls[0];
+  check("the request uses the default model and structured output", call.body.model === "claude-opus-5-5" && call.body.output_config.format.type === "json_schema" && call.body.output_config.effort === "medium", call.body.model);
+  check("...with refusal fallbacks on", call.body.fallbacks === "default" && call.headers["anthropic-beta"] === "server-side-fallback-2026-07-01");
+  check("...and the key and version headers", call.headers["x-api-key"] === "sk-ant-test-0000" && call.headers["anthropic-version"] === "2026-10-21" && call.headers["anthropic-dangerous-direct-browser-access"] === "true");
+  const sentText = JSON.stringify(call.body);
+  check("it sends your work history", sentText.includes("Globex"));
+  check("...but never contact details or self-ID answers", !sentText.includes("testa@example.com") && !/veteran/i.test(sentText) && !sentText.includes("1 Test St"));
+  await post.panel.reload();
+  await post.panel.waitForFunction(() => window.Panel && Panel.state.access !== "checking");
+  await post.panel.locator("#tabFit").click();
+  await post.panel.waitForFunction(() => FitPanel.state.report && FitPanel.state.report.source === "claude");
+  eq("reopening shows the saved reading without paying again", claudeCalls.length, 1);
+  claudeReply = { status: 401, body: { type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } } };
+  await post.panel.locator("#runClaude").click();
+  await post.panel.waitForSelector("#claudeCard .note.warn");
+  check("a bad key gets a plain explanation", (await post.panel.locator("#claudeCard").textContent()).includes("didn't accept that API key"));
+  await post.panel.close();
+  await post.form.waitForFunction(() => !document.querySelector("[data-callback-fit]"));
+  check("closing the panel removes the marks", true);
+  await post.form.close();
+  await sw.evaluate(() => chrome.storage.local.remove("settings"));
 
   section("Autofill: other pages");
   const custom = await open("https://careers.custom.example/apply");

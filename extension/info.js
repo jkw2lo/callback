@@ -105,6 +105,49 @@
       bound(p.texts, "summary", "Summary", { long: true, rows: 4 }));
     return x.el;
   }
+  function prefsPart(p) {
+    var pr = p.prefs;
+    var x = part("prefs", "What you're looking for", "The Fit tab compares postings with this.");
+    var cur = h("select", { "data-pref": "currency", onchange: function (e) { pr.currency = e.target.value; Panel.saveProfile(); } });
+    ["USD", "CAD", "GBP", "EUR"].forEach(function (c) { cur.append(h("option", { value: c, text: c })); });
+    cur.value = pr.currency || "USD";
+    x.body.append(
+      h("div", { cls: "two" },
+        bound(pr, "payMin", "Lowest yearly pay", { type: "number", name: "prefs.payMin" }),
+        bound(pr, "payMax", "Hoped-for yearly pay", { type: "number", name: "prefs.payMax" })),
+      h("label", { cls: "field" }, h("span", { text: "Currency" }), cur),
+      h("div", { cls: "field" }, h("span", { text: "Work styles you'd take" }),
+        h.apply(null, ["div", { cls: "row" }].concat(["remote", "hybrid", "onsite"].map(function (k) {
+          var c = h("input", { type: "checkbox", "data-style": k, onchange: function (e) { pr.styles[k] = e.target.checked; Panel.saveProfile(); } });
+          c.checked = pr.styles[k] !== false;
+          return h("label", { cls: "check" }, c, h("span", { text: { remote: "Remote", hybrid: "Hybrid", onsite: "On-site" }[k] }));
+        })))),
+      bound(pr, "places", "Places you'd work, separated by commas", { name: "prefs.places" }));
+    return x.el;
+  }
+  function claudePart() {
+    var x = part("claude", "Claude analysis", "Optional. With your own Claude API key, the Fit tab can ask Claude for a line-by-line reading. It sends the posting with your work history, education, skills and summary, never your contact details or self-ID answers, and only when you press Analyze. Billing is on your key.");
+    chrome.storage.local.get("settings").then(function (r) {
+      var s = r.settings || {};
+      var key = h("input", { type: "password", autocomplete: "off", spellcheck: "false", placeholder: "sk-ant-…", "data-setting": "claudeKey" });
+      key.value = s.claudeKey || "";
+      var model = h("select", { "data-setting": "claudeModel" });
+      Object.keys(Fit.MODELS).forEach(function (id) { model.append(h("option", { value: id, text: Fit.MODELS[id].name + ", about " + Fit.money(Fit.estimate(id)) + " a posting" })); });
+      model.value = Fit.MODELS[s.claudeModel] ? s.claudeModel : Fit.DEFAULT_MODEL;
+      function store() {
+        var next = { claudeKey: key.value.trim(), claudeModel: model.value };
+        chrome.storage.local.set({ settings: next });
+      }
+      key.addEventListener("change", store);
+      model.addEventListener("change", store);
+      x.body.append(
+        h("label", { cls: "field" }, h("span", { text: "Claude API key" }), key),
+        h("label", { cls: "field" }, h("span", { text: "Model" }), model),
+        h("p", { cls: "hint", text: "The key stays in this browser, separate from your info, and isn't in downloaded copies. Results are kept, so the same posting isn't paid for twice." }),
+        h("div", { cls: "row" }, h("button", { cls: "btn ghost danger", type: "button", id: "removeKey", text: "Remove key", onclick: function () { key.value = ""; store(); } })));
+    });
+    return x.el;
+  }
   function selfIdPart(p) {
     var x = part("self", "Voluntary self-identification", "Optional, and blank until you choose. These stay in this browser, and reach a form only when you pick one or use Fill the form. A downloaded copy leaves them out unless you ask for them.");
     Object.keys(Match.CHOICES).filter(function (k) { return Match.CHOICES[k].self; }).forEach(function (k) { x.body.append(choice(p, k)); });
@@ -199,7 +242,7 @@
       h("p", { cls: "muted small", text: "Pulls your work history, education and links from your Projects site. It only adds what's missing." }),
       h("div", { cls: "row" }, h("button", { cls: "btn solid", type: "button", id: "importResume", text: "Import my resume", onclick: importResume })),
       h("p", { cls: "status", id: "infoStatus", role: "status", text: statusText })));
-    view.append(aboutPart(p), linksPart(p), jobsPart(p), eduPart(p), questionsPart(p), selfIdPart(p), savedPart(p));
+    view.append(aboutPart(p), linksPart(p), jobsPart(p), eduPart(p), questionsPart(p), selfIdPart(p), savedPart(p), prefsPart(p), claudePart());
     var sites = await sitesPart();
     if (sites) view.append(sites);
     view.append(h("div", { cls: "card" },
