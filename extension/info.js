@@ -106,7 +106,7 @@
     return x.el;
   }
   function selfIdPart(p) {
-    var x = part("self", "Voluntary self-identification", "Optional, and blank until you choose. These stay in this browser and reach a form only when you click one. A downloaded copy leaves them out unless you ask for them.");
+    var x = part("self", "Voluntary self-identification", "Optional, and blank until you choose. These stay in this browser, and reach a form only when you pick one or use Fill the form. A downloaded copy leaves them out unless you ask for them.");
     Object.keys(Match.CHOICES).filter(function (k) { return Match.CHOICES[k].self; }).forEach(function (k) { x.body.append(choice(p, k)); });
     return x.el;
   }

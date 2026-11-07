@@ -360,6 +360,20 @@
     return { kinds: kinds, suggestions: suggestions, others: others, unset: unset };
   }
 
+  // For filling in one go: the top suggestion, only when it's a clear answer to an empty field.
+  // Anything less is left for you, with the reason.
+  function confident(f, found) {
+    var top = found.suggestions[0];
+    if (f.value) return { why: "Already answered" };
+    if (f.type === "checkbox" && !f.multi) return { why: "Tick it yourself" };
+    if (!top) {
+      if (found.unset) return { why: "No saved answer" };
+      return { why: found.others.length ? "Pick one" : "Nothing saved fits" };
+    }
+    if (top.score < 75) return { why: "Check the suggestion" };
+    return { pick: top };
+  }
+
   function search(query, p, ctx) {
     var q = norm(query);
     if (!q) return [];
@@ -389,5 +403,5 @@
     return open.filter(function (j) { return j.company && parts.indexOf(slug(j.company)) >= 0; })[0] || null;
   }
 
-  root.Match = { CHOICES: CHOICES, classify: classify, suggest: suggest, search: search, items: items, choiceOf: choiceOf, bestOption: bestOption, formatDate: formatDate, dateLabel: dateLabel, jobForPage: jobForPage, norm: norm, zoneOf: zoneOf };
+  root.Match = { CHOICES: CHOICES, classify: classify, suggest: suggest, confident: confident, search: search, items: items, choiceOf: choiceOf, bestOption: bestOption, formatDate: formatDate, dateLabel: dateLabel, jobForPage: jobForPage, norm: norm, zoneOf: zoneOf };
 })(typeof window !== "undefined" ? window : globalThis);

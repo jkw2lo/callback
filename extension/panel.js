@@ -14,7 +14,9 @@
     field: null, frameId: null, atEnd: false,
     profile: Profile.blank(), jobs: [], chosenJob: new Map(),
     picks: {}, remember: null, note: null, query: "", view: "fill",
-    reqId: 0, pending: new Map(), result: null
+    reqId: 0, pending: new Map(), result: null,
+    pass: null,   // filling in one go: { done, total, stopped }
+    review: null  // what that filled and what it left: { filled: [], left: [] }
   };
 
   var view = document.getElementById("fillView");
@@ -47,6 +49,8 @@
     S.field = null;
     S.atEnd = false;
     S.result = null;
+    S.review = null;
+    if (S.pass) S.pass.stopped = true;
     S.access = "checking";
     render();
     var tab;
@@ -89,6 +93,9 @@
       void chrome.runtime.lastError;
       if (S.ports.get(frameId) === port) S.ports.delete(frameId);
       S.frames.delete(frameId);
+      S.pending.forEach(function (entry, id) {
+        if (entry.frameId === frameId && entry.resolve) { S.pending.delete(id); entry.resolve({ ok: false, reason: "gone" }); }
+      });
       if (S.frameId === frameId) { S.field = null; render(); }
     });
     render();
@@ -118,6 +125,7 @@
       S.frames.set(frameId, entry);
       if (!S.field && was !== totals().total) render(); else renderCount();
     } else if (m.type === "field") {
+      if (S.pass) return;
       var sameField = S.field && S.field.id === m.field.id && S.frameId === frameId;
       S.field = m.field;
       S.frameId = frameId;
@@ -134,10 +142,12 @@
       S.atEnd = true;
       if (S.remember && ++S.remember.age > 1) S.remember = null;
       render();
-    } else if (m.type === "filled") {
-      var pick = S.pending.get(m.reqId);
+    } else if (m.type === "filled" || m.type === "scanned" || m.type === "cleared") {
+      var entry = S.pending.get(m.reqId);
       S.pending.delete(m.reqId);
-      if (pick && !m.ok) failed(pick, m.reason);
+      if (!entry) return;
+      if (entry.resolve) entry.resolve(m);
+      else if (!m.ok) failed(entry.pick, m.reason);
     } else if (m.type === "typed") {
       offerRemember(m.field, m.value);
     }
@@ -151,9 +161,22 @@
     var f = S.field;
     var port = f && S.ports.get(S.frameId);
     if (!port) return;
-    var id = ++S.reqId;
-    S.pending.set(id, pick);
-    port.postMessage({ type: "fill", reqId: id, fieldId: f.id, value: pick.value, advance: !f.multi });
+    if (S.review) {
+      // While reviewing, a change goes back to the list instead of on to the next field
+      var frameId = S.frameId;
+      ask(frameId, { type: "fill", fieldId: f.id, value: pick.value, quiet: true }).then(function (res) {
+        if (!res.ok) return failed(pick, res.reason);
+        reviewed(f, frameId, pick.value, pick.label);
+        var p = S.ports.get(frameId);
+        if (p && !f.multi) p.postMessage({ type: "mark", fieldIds: [f.id] });
+        render();
+      });
+      if (!f.multi) { S.field = null; render(); }
+    } else {
+      var id = ++S.reqId;
+      S.pending.set(id, { pick: pick });
+      port.postMessage({ type: "fill", reqId: id, fieldId: f.id, value: pick.value, advance: !f.multi });
+    }
 
     if (isJobish(pick.key)) S.picks[Match.norm(f.section)] = Number(pick.key.split(".")[1]);
     if (pick.key && how === "picked") {
@@ -195,11 +218,158 @@
     if (top) top.focus({ preventScroll: true });
   }
 
+  // ---------- filling in one go, then reviewing ----------
+  function ask(frameId, msg) {
+    return new Promise(function (resolve) {
+      var port = S.ports.get(frameId);
+      if (!port) return resolve({ ok: false, reason: "gone" });
+      var id = ++S.reqId;
+      msg.reqId = id;
+      S.pending.set(id, { resolve: resolve, frameId: frameId });
+      try { port.postMessage(msg); } catch (e) { S.pending.delete(id); resolve({ ok: false, reason: "gone" }); }
+    });
+  }
+  function sameField(a, frameId, field) { return a.frameId === frameId && a.field.id === field.id; }
+  function reviewed(field, frameId, value, from) {
+    var r = S.review;
+    if (!r) return;
+    r.left = r.left.filter(function (x) { return !sameField(x, frameId, field); });
+    var had = r.filled.filter(function (x) { return sameField(x, frameId, field); })[0];
+    if (had) { had.value = value; had.from = from || "You picked this"; }
+    else r.filled.push({ field: field, frameId: frameId, value: value, from: from || "You picked this" });
+  }
+  async function fillAll() {
+    if (S.pass) return;
+    var pass = S.pass = { done: 0, total: 0, stopped: false };
+    var review = S.review = { filled: [], left: [] };
+    S.field = null;
+    S.atEnd = false;
+    S.result = null;
+    S.remember = null;
+    S.ports.forEach(function (p) { p.postMessage({ type: "drop" }); p.postMessage({ type: "unmark" }); });
+    render();
+    var seen = {};
+    // A second round catches questions that only appear after an earlier answer
+    for (var round = 0; round < 3 && !pass.stopped; round++) {
+      var fresh = 0;
+      var frameIds = Array.from(S.ports.keys());
+      for (var i = 0; i < frameIds.length && !pass.stopped; i++) {
+        var frameId = frameIds[i];
+        var scanned = await ask(frameId, { type: "scan" });
+        var todo = [];
+        (scanned.fields || []).forEach(function (f) {
+          var key = frameId + ":" + f.id;
+          if (seen[key]) return;
+          seen[key] = true;
+          fresh++;
+          if (f.value) return; // you'd answered it already
+          var verdict = Match.confident(f, Match.suggest(f, S.profile, context()));
+          if (verdict.pick) todo.push({ field: f, pick: verdict.pick });
+          else review.left.push({ field: f, frameId: frameId, why: verdict.why });
+        });
+        pass.total += todo.length;
+        render();
+        for (var j = 0; j < todo.length; j++) {
+          var item = todo[j];
+          if (pass.stopped) { review.left.push({ field: item.field, frameId: frameId, why: "Stopped before this one" }); continue; }
+          // Picks so far steer the rest: a second job's company leads to its title
+          var again = Match.confident(item.field, Match.suggest(item.field, S.profile, context()));
+          var pick = again.pick || item.pick;
+          var res = await ask(frameId, { type: "fill", fieldId: item.field.id, value: pick.value, quiet: true });
+          pass.done++;
+          if (res.ok) {
+            review.filled.push({ field: item.field, frameId: frameId, value: pick.value, from: pick.label });
+            if (isJobish(pick.key)) S.picks[Match.norm(item.field.section)] = Number(pick.key.split(".")[1]);
+          } else {
+            review.left.push({ field: item.field, frameId: frameId, why: res.reason === "no-option" ? "Not one of its choices" : "It wouldn't take a value" });
+          }
+          renderPass();
+        }
+      }
+      if (!fresh) break;
+    }
+    S.ports.forEach(function (p, frameId) {
+      p.postMessage({ type: "mark", fieldIds: review.filled.filter(function (x) { return x.frameId === frameId; }).map(function (x) { return x.field.id; }) });
+    });
+    S.pass = null;
+    render();
+  }
+  function finishReview() {
+    S.ports.forEach(function (p) { p.postMessage({ type: "unmark" }); });
+    S.review = null;
+    S.field = null;
+    render();
+  }
+  function goTo(item) {
+    var p = S.ports.get(item.frameId);
+    if (p) p.postMessage({ type: "goto", fieldId: item.field.id });
+  }
+  async function undo(item) {
+    var res = await ask(item.frameId, { type: "clear", fieldId: item.field.id });
+    if (!res.ok || !S.review) return;
+    var p = S.ports.get(item.frameId);
+    if (p) p.postMessage({ type: "unmark", fieldIds: [item.field.id] });
+    S.review.filled = S.review.filled.filter(function (x) { return x !== item; });
+    S.review.left.unshift({ field: item.field, frameId: item.frameId, why: "You cleared it" });
+    render();
+  }
+  function renderPass() {
+    var el = document.getElementById("passCount");
+    if (el && S.pass) el.textContent = S.pass.done + " of " + S.pass.total;
+  }
+  function reviewCard() {
+    var r = S.review;
+    var busy = !!S.pass;
+    var card = h("div", { cls: "card", id: "reviewCard" });
+    if (busy) {
+      card.append(h("div", { cls: "row spread" },
+        h("h2", {}, "Filling the form… ", h("span", { id: "passCount", text: S.pass.done + " of " + S.pass.total })),
+        h("button", { cls: "btn ghost", type: "button", id: "stopPass", text: "Stop", onclick: function () { S.pass.stopped = true; } })));
+      card.append(h("p", { cls: "muted small", text: "Only fields with a clear answer from your saved info. Nothing is submitted." }));
+      return card;
+    }
+    card.append(h("h2", { text: r.filled.length ? "Filled " + r.filled.length + (r.filled.length === 1 ? " field" : " fields") + ". Check them over" : "Nothing had a clear answer" }));
+    card.append(h("p", { cls: "muted small", text: r.filled.length
+      ? "They're outlined on the page with dashes. Click one here to change it. Nothing has been submitted."
+      : "Go through the fields below one at a time." }));
+    if (r.filled.length) {
+      var list = h("div", { cls: "review", id: "filledList" });
+      r.filled.forEach(function (item) {
+        var canUndo = item.field.type === "text" || item.field.type === "textarea" || item.field.type === "select";
+        list.append(h("div", { cls: "rev" },
+          h("button", { cls: "rev-main", type: "button", onclick: function () { goTo(item); } },
+            h("span", { cls: "rev-q", text: item.field.label || item.field.placeholder || "Field" }),
+            h("span", { cls: "rev-v", text: item.value }),
+            item.from && Match.norm(item.from) !== Match.norm(item.field.label) ? h("span", { cls: "rev-from", text: item.from }) : null),
+          canUndo ? h("button", { cls: "rev-undo", type: "button", text: "Undo", "aria-label": "Clear " + (item.field.label || "this field"), onclick: function () { undo(item); } }) : null));
+      });
+      card.append(list);
+    }
+    if (r.left.length) {
+      card.append(h("div", { cls: "divider", text: "Needs you (" + r.left.length + ")" }));
+      var left = h("div", { cls: "review", id: "leftList" });
+      r.left.forEach(function (item) {
+        left.append(h("div", { cls: "rev" },
+          h("button", { cls: "rev-main", type: "button", onclick: function () { goTo(item); } },
+            h("span", { cls: "rev-v", text: item.field.label || item.field.placeholder || "Field" }),
+            h("span", { cls: "rev-from", text: item.why }))));
+      });
+      card.append(left);
+    }
+    card.append(h("div", { cls: "row" },
+      h("button", { cls: "btn solid", type: "button", id: "doneReview", text: "Done reviewing", onclick: finishReview }),
+      h("span", { cls: "small muted", text: "Attach your resume and submit it yourself." })));
+    return card;
+  }
+  function fillAllButton(solid) {
+    return h("button", { cls: "btn" + (solid ? " solid" : ""), type: "button", id: solid ? "fillAll" : "fillAllSmall", text: "Fill the form", onclick: fillAll });
+  }
+
   // ---------- remembering what you answered ----------
   function offerRemember(field, value) {
     if (!value || (field.type === "checkbox" && field.options.length < 2)) return;
     var known = Match.suggest(field, S.profile, context()).suggestions.some(function (s) { return Match.norm(s.value) === Match.norm(value); });
-    if (known || S.pending.size > 1) return;
+    if (known || S.pass) return;
     S.remember = { field: field, value: value, age: 0 };
     render();
   }
@@ -368,24 +538,33 @@
     view.append(notes());
     view.append(jobBar());
 
-    if (S.field) {
+    if (S.field && !S.pass) {
       var f = S.field;
-      view.append(h("div", { cls: "card", id: "fieldCard" }, questionHead(f), fieldBody(f), searchBox()));
+      if (!S.review) view.append(h("div", { cls: "row fillbar" }, fillAllButton(false), h("span", { cls: "small muted", text: "fills every field with a clear answer" })));
+      view.append(h("div", { cls: "card", id: "fieldCard" },
+        S.review ? h("div", { cls: "row back" }, h("button", { cls: "btn ghost", type: "button", id: "backToReview", text: "‹ Back to review", onclick: function () { S.field = null; S.ports.forEach(function (p) { p.postMessage({ type: "drop" }); }); render(); } })) : null,
+        questionHead(f), fieldBody(f), searchBox()));
+    } else if (S.pass || S.review) {
+      view.append(reviewCard());
     } else if (S.atEnd) {
       view.append(h("div", { cls: "card", id: "endCard" },
         h("h2", { text: "No more empty fields here" }),
-        h("p", { cls: "muted", text: "Look it over, attach your resume and submit it yourself. If there's another page, click its first field." })));
+        h("p", { cls: "muted", text: "Look it over, attach your resume and submit it yourself. If there's another page, click its first field." }),
+        h("div", { cls: "row" }, fillAllButton(false))));
     } else if (totals().total) {
       view.append(h("div", { cls: "card", id: "startCard" },
-        h("h2", { text: "Click a field on the form" }),
-        h("p", { cls: "muted", text: "Your matching info shows up here. Click one, or press Enter, to fill it and move on." }),
-        h("div", { cls: "row" }, h("button", { cls: "btn solid", type: "button", id: "startBtn", text: "Start at the first empty field", onclick: start }))));
+        h("h2", { text: "Fill the form in one go" }),
+        h("p", { cls: "muted", text: "Callback fills every field it has a clear answer for, then shows you what it put in and what's left for you." }),
+        h("div", { cls: "row" }, fillAllButton(true)),
+        h("p", { cls: "muted small or", text: "Or go field by field: click one on the form, or" }),
+        h("div", { cls: "row" }, h("button", { cls: "btn", type: "button", id: "startBtn", text: "Start at the first empty field", onclick: start }))));
     } else {
       view.append(h("div", { cls: "card", id: "noFormCard" },
         h("h2", { text: "No form on this page" }),
         h("p", { cls: "muted", text: "Open the application form. Many postings have an Apply button first." })));
     }
 
+    if (S.pass) return;
     view.append(h("div", { cls: "nav" },
       h("button", { cls: "btn ghost", type: "button", id: "backBtn", text: "Back", disabled: !S.field, onclick: function () { move(-1); } }),
       h("span", { cls: "count", id: "fieldCount", role: "status" }),

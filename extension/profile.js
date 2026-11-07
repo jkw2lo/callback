@@ -1,5 +1,5 @@
 /* Your saved info. It lives only in this extension's storage in this browser: it never goes
-   to Firebase or the board, and a page sees a value only when you click it into a field. */
+   to Firebase or the board, and a page sees a value only when you fill it in from the panel. */
 (function (root) {
   "use strict";
 

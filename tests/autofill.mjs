@@ -96,7 +96,10 @@ export const FORMS = {
     '<li class="application-question custom-question"><div class="application-label full-width"><div class="text">Have you ever been employed by Northwind?<span class="required">✱</span></div></div><div class="application-field"><ul>' +
     '<li><label><input type="radio" name="cards[1]" value="Yes"><span>Yes</span></label></li><li><label><input type="radio" name="cards[1]" value="No"><span>No</span></label></li></ul></div></li>' +
     '<li class="application-question"><label><div class="application-label">How did you hear about this job?</div><input name="heard"></label></li>' +
-    '</ul></form>'),
+    // Only asked once you say where you are, as Lever's surveys do
+    '<li class="application-question" id="later" style="display:none"><div class="application-label">Are you a veteran?</div><div class="application-field"><ul>' +
+    '<li><label><input type="radio" name="vet" value="Yes"><span>Yes</span></label></li><li><label><input type="radio" name="vet" value="No"><span>No</span></label></li></ul></div></li>' +
+    '</ul></form><script>document.querySelector("select[name=where]").addEventListener("change", (e) => { document.getElementById("later").style.display = e.target.value === "United States" ? "" : "none"; });</script>'),
 
   // Ashby's shape: unlinked labels, a description between question and answer, Yes and No buttons
   "https://jobs.ashbyhq.com/globex/xyz/application": page("<title>Globex</title>",
@@ -454,6 +457,70 @@ export async function runAutofill({ context, sw, check, eq, section, RESULTS, RO
   await onField(learned.panel, "Current company");
   eq("a pick you preferred comes first next time", await top(learned.panel), "Initech");
   await closeAll(learned);
+
+  section("Autofill: filling in one go");
+  const all = await open("https://job-boards.greenhouse.io/acme/jobs/2");
+  await all.panel.waitForSelector("#fillAll");
+  await all.panel.screenshot({ path: join(RESULTS, "panel-start.png") });
+  await all.form.fill("#last_name", "Mine");
+  await onField(all.panel, "Last Name");
+  check("Fill the form is there while you're on a field, too", await all.panel.locator("#fillAllSmall").isVisible());
+  await all.panel.locator("#fillAllSmall").click();
+  await all.panel.waitForSelector("#doneReview", { timeout: 20000 });
+  eq("it fills what it has a clear answer for", await all.form.inputValue("#first_name"), "Testa");
+  eq("...so a React-style form notices", await all.form.evaluate(() => window.__state.first), "Testa");
+  eq("...including your portfolio", await all.form.inputValue("#q_site"), "https://testa.example");
+  const chosen = await all.form.locator("[data-select] .single-value").allTextContents();
+  eq("...and dropdowns with a saved answer", chosen.slice(0, 2).join(" | "), "Yes | I am not a protected veteran");
+  eq("...but not one you haven't answered", chosen[2], "");
+  eq("what you'd already typed is left alone", await all.form.inputValue("#last_name"), "Mine");
+  check("passwords and hidden fields stay untouched", (await all.form.inputValue("#pw")) === "" && (await all.form.inputValue("#csrf")) === "x");
+  check("nothing is submitted", await all.form.evaluate(() => window.__submitted === false));
+  eq("...and the page stays put", all.form.url(), "https://job-boards.greenhouse.io/acme/jobs/2");
+  const filledRows = await all.panel.locator("#filledList .rev").allTextContents();
+  eq("the review lists what it filled", filledRows.length, 5);
+  check("...with each value and where it came from", filledRows.some((t) => t.includes("Email") && t.includes("testa@example.com")), filledRows);
+  const leftRows = await all.panel.locator("#leftList .rev").allTextContents();
+  check("...and what's left, with why", leftRows.some((t) => t.includes("Why do you want") && t.includes("Nothing saved fits")) && leftRows.some((t) => t.includes("Gender") && t.includes("No saved answer")), leftRows);
+  check("what it filled is outlined on the page", await all.form.evaluate(() => document.getElementById("first_name").style.outline.includes("dashed")));
+  await all.panel.screenshot({ path: join(RESULTS, "panel-review.png"), fullPage: true });
+
+  await all.panel.locator("#leftList .rev-main", { hasText: "Gender" }).click();
+  await onField(all.panel, "Gender");
+  check("clicking one opens it, with a way back", await all.panel.locator("#backToReview").isVisible());
+  await all.panel.waitForFunction(() => Panel.state.field.options.length === 3);
+  await all.panel.locator(".pick-main", { hasText: "Decline To Self Identify" }).click();
+  await all.panel.waitForSelector("#reviewCard");
+  await all.panel.waitForFunction(() => Panel.state.review.filled.length === 6);
+  eq("a pick while reviewing goes back to the list", (await all.form.locator("[data-select] .single-value").allTextContents())[2], "Decline To Self Identify");
+  check("...and moves it to the filled list", !(await all.panel.locator("#leftList").textContent()).includes("Gender"));
+  await all.panel.locator("#filledList .rev", { hasText: "Email" }).locator(".rev-undo").click();
+  await all.panel.waitForFunction(() => document.getElementById("leftList").textContent.includes("You cleared it"));
+  eq("Undo empties the field", await all.form.inputValue("#email"), "");
+  check("...and drops its outline", await all.form.evaluate(() => !document.getElementById("email").style.outline));
+  await all.panel.locator("#filledList .rev-main", { hasText: "First Name" }).click();
+  await onField(all.panel, "First Name");
+  await all.panel.locator("#backToReview").click();
+  await all.panel.waitForSelector("#reviewCard");
+  check("Back to review returns to the list", true);
+  await all.panel.locator("#doneReview").click();
+  await all.panel.waitForSelector("#startCard");
+  check("Done removes the outlines", await all.form.evaluate(() => !document.getElementById("first_name").style.outline));
+  await closeAll(all);
+
+  await sw.evaluate(async () => {
+    const { profile } = await chrome.storage.local.get("profile");
+    profile.basics.country = "United States";
+    await chrome.storage.local.set({ profile });
+  });
+  const later = await open("https://jobs.lever.co/northwind/abc-1/apply");
+  await later.panel.waitForSelector("#fillAll");
+  await later.panel.locator("#fillAll").click();
+  await later.panel.waitForSelector("#doneReview", { timeout: 20000 });
+  eq("a native dropdown fills in one go", await later.form.inputValue('select[name="where"]'), "United States");
+  check("a question that appears after an answer is filled too", await later.form.evaluate(() => document.querySelector('input[name="vet"][value="No"]').checked));
+  check("a question with no saved answer is left for you", (await later.panel.locator("#leftList").textContent()).includes("employed by Northwind"));
+  await closeAll(later);
 
   section("Autofill: which job");
   const board = await context.newPage();

@@ -40,13 +40,21 @@ hand it to the board, and has no account.
 ## Filling applications
 
 Click the toolbar icon, or right-click and choose **Fill this application**, to open the side panel.
-Then click a field on the form, or press **Start at the first empty field**.
+
+**Fill the form** does a first pass: it fills every empty field it has a clear answer for, then lists
+what it put in and what's left for you, with the reason ("Nothing saved fits", "No saved answer", "Tick it
+yourself"). What it filled is outlined with dashes on the page. Click a row to change that field, or **Undo**
+to empty a text box or dropdown. It skips fields you've already answered, consent checkboxes and anything
+it isn't sure of, and picks up questions that only appear after an earlier answer. **Done reviewing**
+removes the outlines.
+
+To go field by field instead, click a field on the form, or press **Start at the first empty field**.
 
 - **Suggestions:** the panel shows what the field is asking and your saved info that fits, best first.
 - **Filling:** click a suggestion, or press Enter on it, and it goes in and moves to the next empty field.
   **Next** and **Back** walk the form. **Search all my info** finds anything else you've saved.
-- **It never acts alone:** nothing goes into a form until you click it, it never moves between pages, and
-  it never submits. Files aren't filled, so attach your resume yourself.
+- **You start it:** nothing goes into a form until you click a suggestion or **Fill the form**. It never moves
+  between pages, and it never submits. Files aren't filled, so attach your resume yourself.
 - **Fields it can't fill:** the value goes on your clipboard, and the panel tells you to paste it.
 - **It learns:** answer something yourself and it offers to save that for similar questions. If you
   pick a suggestion other than the top one, that comes first next time.
@@ -56,8 +64,8 @@ Everything you save is under **My info**. **Import my resume** pulls work histor
 from the Projects site's `resume.json`, and only adds what's missing.
 
 **Your info stays in this browser.** It's in the extension's own storage, never in Firebase or on the board,
-and a page gets a value only when you click it. Self-identification answers (veteran, disability, gender,
-race and so on) start blank and are never guessed. Removing the extension erases all of it, so use
+and a page gets a value only when you fill it. Self-identification answers (veteran, disability, gender,
+race and so on) start blank and are never guessed. Once you've saved one, **Fill the form** uses it too. Removing the extension erases all of it, so use
 **Download a copy**, which leaves self-ID answers out unless you ask for them.
 
 **Which sites:** the form script runs on the job portals listed in `manifest.json` (Greenhouse, Lever, Ashby,

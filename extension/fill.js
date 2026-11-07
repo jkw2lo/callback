@@ -1,6 +1,7 @@
 /* Runs on application forms. It reads what each field asks and tells the side panel which one
-   you're on, then puts in the one value you click. It never sees your saved info until you click,
-   never moves between pages and never submits anything.
+   you're on, then puts in what the panel sends: the value you clicked, or each clear answer when you press
+   Fill the form. It never sees your saved info until then, never moves between pages and never
+   submits anything.
 
    Quiet until the panel opens: without a panel listening, the connection below simply fails. */
 (function () {
@@ -15,6 +16,8 @@
   var ids = new WeakMap();
   var nextId = 1;
   var lit = null;
+  var marks = new Map(); // fields filled in one go, outlined until you finish reviewing
+  var hush = 0;          // while filling in one go, your focus moving isn't you picking a field
   var watcher = null;
   var progressTimer = 0;
   var peeked = new WeakMap();
@@ -289,9 +292,12 @@
     }
   }
   // A dropdown only has its options while it's open: open it, read them, close it again
-  async function peek(f) {
-    await wait(200); // if you clicked it open yourself, leave it open
-    if (!current || current.id !== f.id || f.el.value) return null;
+  async function peek(f, now) {
+    if (!now) {
+      await wait(200); // if you clicked it open yourself, leave it open
+      if (!current || current.id !== f.id) return null;
+    }
+    if (f.el.value) return null;
     var open = f.el.getAttribute("aria-expanded") === "true";
     if (f.type === "listbox") { if (!open) press(f.el); }
     else if (!open) { f.el.focus({ preventScroll: true }); key(f.el, "ArrowDown", 40); }
@@ -380,8 +386,7 @@
     }
     return null;
   }
-  function light(f) {
-    unlight();
+  function targetOf(f) {
     var target = f.box || (f.members.length > 1 ? (f.el.closest("fieldset,[role='radiogroup'],[role='group'],ul") || f.el) : f.el);
     if (f.type === "radio" || f.type === "checkbox") {
       if (f.members.length === 1 && f.el.labels && f.el.labels[0]) target = f.el.labels[0];
@@ -393,7 +398,33 @@
         if (box.getBoundingClientRect().width >= 80) { target = box; break; }
       }
     }
-    lit = { el: target, outline: target.style.getPropertyValue("outline"), priority: target.style.getPropertyPriority("outline"), offset: target.style.getPropertyValue("outline-offset") };
+    return target;
+  }
+  function styleOf(el) {
+    return { outline: el.style.getPropertyValue("outline"), priority: el.style.getPropertyPriority("outline"), offset: el.style.getPropertyValue("outline-offset") };
+  }
+  function restore(el, was) {
+    if (was.outline) el.style.setProperty("outline", was.outline, was.priority); else el.style.removeProperty("outline");
+    if (was.offset) el.style.setProperty("outline-offset", was.offset); else el.style.removeProperty("outline-offset");
+  }
+  function mark(f) {
+    var target = targetOf(f);
+    if (marks.has(target)) return;
+    if (lit && lit.el === target) { unlight(); }
+    marks.set(target, styleOf(target));
+    target.style.setProperty("outline", "2px dashed #1d6a50", "important");
+    target.style.setProperty("outline-offset", "2px");
+  }
+  function unmark(target) {
+    var was = marks.get(target);
+    marks.delete(target);
+    if (lit && lit.el === target) { lit.outline = was.outline; lit.priority = was.priority; lit.offset = was.offset; return; }
+    restore(target, was);
+  }
+  function light(f) {
+    unlight();
+    var target = targetOf(f);
+    lit = Object.assign({ el: target }, styleOf(target));
     target.style.setProperty("outline", "2px solid #1d6a50", "important");
     target.style.setProperty("outline-offset", "2px");
   }
@@ -544,10 +575,51 @@
     if (!port) return;
     try { port.postMessage(message); } catch (e) { stop(); }
   }
+  // Every question on the page, with each dropdown's choices read, for filling in one go
+  async function scanAll() {
+    current = null;
+    unlight();
+    hush++;
+    try {
+      fields = collect();
+      var out = [];
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i];
+        if (needsPeek(f) && !peeked.has(f.el) && valueOf(f) === "") {
+          var options = await peek(f, true);
+          if (options) peeked.set(f.el, options);
+        }
+        out.push(describe(f));
+      }
+      if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+      return out;
+    } finally {
+      setTimeout(function () { hush--; }, 50);
+    }
+  }
+  // Only for what can be emptied again cleanly
+  function clear(f) {
+    if (f.type === "text" || f.type === "textarea") {
+      setNative(f.el, "");
+      f.el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true, inputType: "deleteContentBackward" }));
+      f.el.dispatchEvent(new Event("change", { bubbles: true, composed: true }));
+      return true;
+    }
+    if (f.type === "select") {
+      var empty = Array.prototype.find.call(f.el.options, function (o) { return !o.value; });
+      if (!empty) return false;
+      setNative(f.el, "");
+      fire(f.el);
+      return true;
+    }
+    return false;
+  }
+
   function stop() {
     port = null;
     current = null;
     unlight();
+    Array.from(marks.keys()).forEach(unmark);
     if (watcher) { watcher.disconnect(); watcher = null; }
   }
   function onMessage(msg) {
@@ -556,9 +628,12 @@
       fields = collect();
       var f = fields.find(function (x) { return x.id === msg.fieldId; });
       if (!f) return send({ type: "filled", reqId: msg.reqId, ok: false, reason: "gone" });
-      put(f, msg).then(function (result) {
+      if (msg.quiet) hush++;
+      put(f, msg).catch(function () { return { ok: false, reason: "refused" }; }).then(function (result) {
+        if (msg.quiet) setTimeout(function () { hush--; }, 50);
         send({ type: "filled", reqId: msg.reqId, ok: result.ok, reason: result.reason, fieldId: f.id });
         progress();
+        if (msg.quiet) return;
         if (result.ok && msg.advance) {
           var next = moveTo(f, 1, true);
           if (next) setCurrent(next, { scroll: true });
@@ -566,6 +641,28 @@
         } else if (result.ok) {
           send({ type: "field", field: describe(f), update: true });
         }
+      });
+    } else if (msg.type === "scan") {
+      scanAll().then(function (list) { send({ type: "scanned", reqId: msg.reqId, fields: list }); });
+    } else if (msg.type === "goto") {
+      fields = collect();
+      var target = fields.find(function (x) { return x.id === msg.fieldId; });
+      if (target) setCurrent(target, { scroll: true });
+    } else if (msg.type === "clear") {
+      fields = collect();
+      var c = fields.find(function (x) { return x.id === msg.fieldId; });
+      var cleared = !!c && clear(c);
+      send({ type: "cleared", reqId: msg.reqId, ok: cleared });
+      progress();
+    } else if (msg.type === "mark") {
+      fields = collect();
+      fields.forEach(function (x) { if (msg.fieldIds.indexOf(x.id) >= 0) mark(x); });
+    } else if (msg.type === "unmark") {
+      fields = collect();
+      Array.from(marks.keys()).forEach(function (el) {
+        if (!msg.fieldIds) return unmark(el);
+        var hit = fields.some(function (x) { return msg.fieldIds.indexOf(x.id) >= 0 && targetOf(x) === el; });
+        if (hit) unmark(el);
       });
     } else if (msg.type === "move") {
       if (msg.fieldId == null && current && msg.dir === 0) return setCurrent(current, { scroll: true });
@@ -604,7 +701,7 @@
   }
 
   function onFocus(e) {
-    if (!port) return;
+    if (!port || hush) return;
     fields = collect();
     var f = fromEvent(e);
     if (f && (!current || current.id !== f.id)) setCurrent(f);
