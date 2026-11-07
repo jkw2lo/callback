@@ -1,8 +1,11 @@
-/* Captures a posting when you right-click it (or click the toolbar icon) and opens the
-   board with the details filled in for you to check. Saving happens on the board, which is
-   already signed in, so this extension never holds an account or a copy of your jobs.
+/* Captures a posting when you right-click it and opens the board with the details filled in
+   for you to check. Saving happens on the board, which is already signed in, so this extension
+   never holds an account. It keeps only a short list of your jobs (company, role, link) so the
+   side panel can offer the right tracked link.
 
-   activeTab lets it read only the tab you just acted on, at the moment you acted. */
+   The toolbar icon opens the side panel, which fills application forms: see panel.js and fill.js.
+
+   activeTab lets it read the tab you just acted on, at the moment you acted. */
 
 const LIVE_BOARD = "https://jkw2lo.github.io/callback/";
 
@@ -15,6 +18,7 @@ async function boardUrl() {
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.removeAll(() => {
     chrome.contextMenus.create({ id: "add", title: "Add to Callback", contexts: ["page", "selection", "frame"] });
+    chrome.contextMenus.create({ id: "fill", title: "Fill this application", contexts: ["page", "frame", "editable"] });
   });
 });
 
@@ -75,12 +79,56 @@ async function showBoard(fromTab) {
   await chrome.tabs.create({ url, index: fromTab.index + 1, windowId: fromTab.windowId });
 }
 
-chrome.contextMenus.onClicked.addListener((info, tab) => capture(info, tab));
-chrome.action.onClicked.addListener((tab) => capture(null, tab));
+// Chrome only opens a side panel straight from your click, so nothing can come before this.
+// The click also lets the form script into a site that isn't one of the known job portals.
+function openPanel(tab) {
+  if (!tab || !tab.id) return;
+  chrome.sidePanel.open({ tabId: tab.id }).catch(() => {});
+  chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ["fill.js"] }).catch(() => {});
+}
 
-// Only the board may collect a draft, and each draft is handed over once
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === "fill") openPanel(tab);
+  else capture(info, tab);
+});
+chrome.action.onClicked.addListener(openPanel);
+
+// A short list for the side panel, sent by the board. Whatever arrives is checked, since the
+// panel shows these words and puts these links into forms.
+function cleanJobs(list) {
+  const text = (v, max) => String(v == null ? "" : v).slice(0, max);
+  const web = (v) => (/^https?:\/\//i.test(String(v || "")) ? text(v, 2000) : "");
+  return (Array.isArray(list) ? list : []).slice(0, 1000).map((j) => {
+    const tag = text(j && j.tag, 16);
+    if (!/^[a-z0-9-]+$/i.test(tag)) return null;
+    return {
+      tag,
+      company: text(j.company, 120),
+      title: text(j.title, 160),
+      url: web(j.url),
+      stage: text(j.stage, 20),
+      updatedAt: Number(j.updatedAt) || 0,
+      links: { home: web(j.links && j.links.home), resume: web(j.links && j.links.resume) }
+    };
+  }).filter(Boolean);
+}
+
 chrome.runtime.onMessage.addListener((message, sender, reply) => {
-  if (!message || message.type !== "take-draft") return false;
+  if (!message) return false;
+  if (message.type === "board-jobs") {
+    boardUrl().then((url) => {
+      if (sender.url && sender.url.startsWith(url)) chrome.storage.local.set({ boardJobs: cleanJobs(message.jobs) });
+    });
+    return false;
+  }
+  // "Add this job" in the side panel
+  if (message.type === "capture-tab") {
+    if (!sender.url || !sender.url.startsWith(chrome.runtime.getURL(""))) return false;
+    chrome.tabs.get(message.tabId).then((tab) => capture(null, tab)).then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
+  }
+  if (message.type !== "take-draft") return false;
+  // Only the board may collect a draft, and each draft is handed over once
   (async () => {
     const url = await boardUrl();
     if (!sender.url || !sender.url.startsWith(url)) return reply({ draft: null });

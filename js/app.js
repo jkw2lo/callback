@@ -384,8 +384,8 @@
   function renderMenu() {
     $("menuBody").innerHTML =
       '<section class="menu-part"><h3>Account</h3>' + accountHtml() + "</section>" +
-      '<section class="menu-part"><h3>Right-click capture</h3>' +
-      (extensionSeen ? "<p>The extension is connected. Right-click any posting and choose <b>Add to Callback</b>.</p>"
+      '<section class="menu-part"><h3>Chrome extension</h3>' +
+      (extensionSeen ? "<p>The extension is connected. Right-click any posting and choose <b>Add to Callback</b>. On an application form, click its toolbar icon to fill fields from your saved info.</p>"
         : "<p>Add it in desktop Chrome:</p>" +
           '<div class="actions"><a class="btn solid" href="callback-extension.zip" download>Download the extension</a></div>' +
           "<ol><li>Unzip it and keep the <b>callback-extension</b> folder somewhere permanent, because Chrome loads it from there.</li>" +
@@ -456,11 +456,25 @@
     openNew(draft);
   }
   function sayReady() { window.postMessage({ source: "callback-page", type: "ready" }, location.origin); }
+  // So the side panel can offer the right tracked link on an application form. Only these
+  // fields go: the extension doesn't need notes, job descriptions or visit counts.
+  var lastJobsSent = "";
+  function tellExtensionJobs() {
+    if (!extensionSeen) return;
+    var jobs = Store.all().map(function (j) {
+      return { tag: j.tag, company: j.company, title: j.title, url: j.url, stage: j.stage, updatedAt: j.updatedAt, links: linksFor(j) };
+    });
+    var text = JSON.stringify(jobs);
+    if (text === lastJobsSent) return;
+    lastJobsSent = text;
+    window.postMessage({ source: "callback-page", type: "jobs", jobs: jobs }, location.origin);
+  }
   window.addEventListener("message", function (e) {
     if (e.source !== window || e.origin !== location.origin || !e.data || e.data.source !== "callback-ext") return;
     if (e.data.type === "hello") {
       if (!extensionSeen) { extensionSeen = true; render(); if (menuDialog.open) renderMenu(); }
       sayReady();
+      tellExtensionJobs();
     }
     if (e.data.type === "draft") receiveDraft(e.data.draft);
   });
@@ -472,6 +486,7 @@
     if (current && !Store.get(current.id)) { current = null; jobDialog.close(); }
     else if (current) { current = Store.get(current.id); refreshHistory(); }
     render();
+    tellExtensionJobs();
   });
   Sync.onChange(function () {
     renderBanner();
@@ -490,5 +505,6 @@
     Sync.init();
     renderBanner();
     sayReady();
+    tellExtensionJobs();
   });
 })();

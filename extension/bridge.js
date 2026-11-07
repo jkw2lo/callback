@@ -1,4 +1,4 @@
-/* Runs on the board page and passes drafts from the extension to it. */
+/* Runs on the board page. Passes drafts from the extension to it, and a short list of jobs back. */
 (function () {
   "use strict";
 
@@ -13,10 +13,12 @@
 
   window.addEventListener("message", function (e) {
     if (e.source !== window || e.origin !== location.origin || !e.data) return;
-    if (e.data.source === "callback-page" && e.data.type === "ready") {
+    if (e.data.source !== "callback-page") return;
+    if (e.data.type === "ready") {
       pageReady = true;
       deliver();
     }
+    if (e.data.type === "jobs") chrome.runtime.sendMessage({ type: "board-jobs", jobs: e.data.jobs });
   });
 
   chrome.runtime.onMessage.addListener(function (message) {

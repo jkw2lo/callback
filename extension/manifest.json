@@ -1,28 +1,108 @@
 {
   "manifest_version": 3,
   "name": "Callback",
-  "version": "0.1.0",
-  "description": "Right-click a job posting to add it to your Callback board.",
-  "minimum_chrome_version": "114",
-  "permissions": ["activeTab", "contextMenus", "scripting", "storage"],
+  "version": "0.2.0",
+  "description": "Save job postings to your Callback board, and fill application forms from your saved info one click at a time.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwKfnEdWaDujHBTT3nvxYYetNW/5xERskZ5LZFfo2MQf50q34/4pLXJSVv2VIsT80CZg76PtoloKKje94ky8rbb+liOyfeiZ+VsY8Y+y9LcYrtD/uUkHS2yQ+PM0bTY/dRU3QqrKKYktiXyCFw1fwUeCzxRAVM+TjQutGJHFkv5tVtPVWOWPu37ufvnJmBUyACPbg/ovrXPwlpOSVb3t4+5XjzOk5xxc1GKjjbbA+PeOgYmH/o7yIykblM88NQ/tm/sCnSu7oxe7SbcXDDOjqlhW9lv0QtHE2XIMeXzUDB0ErEVzkhGuJDIoUtMJcNUhoeMp1SXJz7tUG/UveeSgZiQIDAQAB",
+  "minimum_chrome_version": "116",
+  "permissions": [
+    "activeTab",
+    "clipboardWrite",
+    "contextMenus",
+    "scripting",
+    "sidePanel",
+    "storage",
+    "tabs"
+  ],
   "host_permissions": [
     "https://jkw2lo.github.io/callback/*",
-    "http://127.0.0.1:8765/callback/*"
+    "http://127.0.0.1:8765/callback/*",
+    "https://job-boards.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://job-boards.eu.greenhouse.io/*",
+    "https://boards.eu.greenhouse.io/*",
+    "https://jobs.lever.co/*",
+    "https://jobs.eu.lever.co/*",
+    "https://jobs.ashbyhq.com/*",
+    "https://*.myworkdayjobs.com/*",
+    "https://*.myworkdaysite.com/*",
+    "https://*.icims.com/*",
+    "https://jobs.smartrecruiters.com/*",
+    "https://apply.workable.com/*",
+    "https://*.bamboohr.com/*",
+    "https://ats.rippling.com/*",
+    "https://jobs.jobvite.com/*",
+    "https://*.taleo.net/*",
+    "https://*.successfactors.com/*",
+    "https://*.successfactors.eu/*",
+    "https://*.breezy.hr/*",
+    "https://*.recruitee.com/*",
+    "https://*.teamtailor.com/*"
   ],
-  "background": { "service_worker": "background.js" },
+  "optional_host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "panel.html"
+  },
   "content_scripts": [
     {
       "matches": [
         "https://jkw2lo.github.io/callback/*",
         "http://127.0.0.1:8765/callback/*"
       ],
-      "js": ["bridge.js"],
+      "js": [
+        "bridge.js"
+      ],
       "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://job-boards.greenhouse.io/*",
+        "https://boards.greenhouse.io/*",
+        "https://job-boards.eu.greenhouse.io/*",
+        "https://boards.eu.greenhouse.io/*",
+        "https://jobs.lever.co/*",
+        "https://jobs.eu.lever.co/*",
+        "https://jobs.ashbyhq.com/*",
+        "https://*.myworkdayjobs.com/*",
+        "https://*.myworkdaysite.com/*",
+        "https://*.icims.com/*",
+        "https://jobs.smartrecruiters.com/*",
+        "https://apply.workable.com/*",
+        "https://*.bamboohr.com/*",
+        "https://ats.rippling.com/*",
+        "https://jobs.jobvite.com/*",
+        "https://*.taleo.net/*",
+        "https://*.successfactors.com/*",
+        "https://*.successfactors.eu/*",
+        "https://*.breezy.hr/*",
+        "https://*.recruitee.com/*",
+        "https://*.teamtailor.com/*"
+      ],
+      "js": [
+        "fill.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "action": {
-    "default_title": "Add this job to Callback",
-    "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png" }
+    "default_title": "Open Callback",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
-  "icons": { "16": "icons/icon16.png", "32": "icons/icon32.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
 }

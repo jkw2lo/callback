@@ -15,6 +15,7 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { FORMS, runAutofill } from "./autofill.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, "..");
@@ -114,8 +115,8 @@ const context = await chromium.launchPersistentContext(profile, {
   args: ["--disable-extensions-except=" + extCopy, "--load-extension=" + extCopy]
 });
 await context.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-for (const url of Object.keys(FIXTURES)) {
-  await context.route(url, (r) => r.fulfill({ contentType: "text/html; charset=utf-8", body: FIXTURES[url] }));
+for (const [url, body] of Object.entries({ ...FIXTURES, ...FORMS })) {
+  await context.route(url, (r) => r.fulfill({ contentType: "text/html; charset=utf-8", body }));
 }
 const errors = [];
 context.on("weberror", (e) => errors.push(String(e.error())));
@@ -390,6 +391,8 @@ try {
   await board.setViewportSize({ width: 1360, height: 860 });
   await shots.close();
   await board.close();
+
+  await runAutofill({ context, sw, check, eq, section, RESULTS, ROOT });
 
   section("First visit");
   await context.addCookies([]);
