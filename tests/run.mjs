@@ -392,6 +392,18 @@ try {
   await shots.close();
   await board.close();
 
+  section("Updating the extension");
+  const connected = await context.newPage();
+  await connected.goto(BOARD);
+  await connected.locator("#menuBtn").click();
+  await connected.waitForFunction(() => document.getElementById("menuBody").textContent.includes("connected"));
+  const update = connected.waitForEvent("download");
+  await connected.locator("#menuBody a[download]").click();
+  eq("the menu still offers the download once connected", (await update).suggestedFilename(), "callback-extension.zip");
+  check("...and says how to update", (await connected.locator("#menuBody").textContent()).includes("reload icon"));
+  await connected.screenshot({ path: join(RESULTS, "menu-connected.png") });
+  await connected.close();
+
   await runAutofill({ context, sw, check, eq, section, RESULTS, ROOT });
 
   section("First visit");

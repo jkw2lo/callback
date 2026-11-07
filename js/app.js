@@ -385,7 +385,9 @@
     $("menuBody").innerHTML =
       '<section class="menu-part"><h3>Account</h3>' + accountHtml() + "</section>" +
       '<section class="menu-part"><h3>Chrome extension</h3>' +
-      (extensionSeen ? "<p>The extension is connected. Right-click any posting and choose <b>Add to Callback</b>. On an application form, click its toolbar icon to fill fields from your saved info.</p>"
+      (extensionSeen ? "<p>The extension is connected. Right-click any posting and choose <b>Add to Callback</b>. On an application form, click its toolbar icon to fill fields from your saved info.</p>" +
+          '<div class="actions"><a class="btn" href="callback-extension.zip" download>Download the latest version</a></div>' +
+          "<p>To update, replace your <b>callback-extension</b> folder with the new one, then press the reload icon on its card in <b>chrome://extensions</b>.</p>"
         : "<p>Add it in desktop Chrome:</p>" +
           '<div class="actions"><a class="btn solid" href="callback-extension.zip" download>Download the extension</a></div>' +
           "<ol><li>Unzip it and keep the <b>callback-extension</b> folder somewhere permanent, because Chrome loads it from there.</li>" +
