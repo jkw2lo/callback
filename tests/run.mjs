@@ -401,6 +401,10 @@ try {
   await connected.locator("#menuBody a[download]").click();
   eq("the menu still offers the download once connected", (await update).suggestedFilename(), "callback-extension.zip");
   check("...and says how to update", (await connected.locator("#menuBody").textContent()).includes("reload icon"));
+  check("...in the button's own color, not a link's", await connected.evaluate(() => {
+    const link = getComputedStyle(document.querySelector("#menuBody a[download]"));
+    return link.color === getComputedStyle(document.body).color && link.textDecorationLine === "none";
+  }));
   await connected.screenshot({ path: join(RESULTS, "menu-connected.png") });
   await connected.close();
 
