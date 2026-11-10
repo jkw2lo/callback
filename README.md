@@ -79,9 +79,22 @@ notes or descriptions), sent by the board, so it can match a form to a job.
 Tested against live Greenhouse, Lever and Ashby forms. Workday needs an account to reach its forms, so its
 sections and list buttons have only been tested on a copy built to match. The other portals haven't been tried.
 
+## Save as Applied
+
+When you've submitted an application, press **Save as Applied** in the side panel. It's on the review list
+after **Fill the form**, at the end of the form, on the thank-you page after you submit, and on the Fit tab.
+The job goes straight onto your board under Applied, with no review step and without taking you off the page:
+the board opens in a background tab if it isn't open already.
+
+It carries the job description and how the job fit. The description usually lives on the posting rather than
+on the form or the thank-you page, so the panel remembers the last 30 postings you open (in this browser only)
+and uses the one that matches. A job already on your board moves from Saved to Applied instead of being added
+twice, and one that's further along is left where it is. Cards show the fit ("72% fit"), and the job's details
+show the score and its top gaps.
+
 ## Job fit
 
-Open the side panel on a job posting and the **Fit** tab shows a report card. A posting with no
+Open the side panel on a job posting and the **Fit** tab shows a report card, before you decide to apply. A posting with no
 application form opens on it by itself.
 
 - **Fit score and callback chance:** how much of what the job asks your saved experience covers,

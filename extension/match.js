@@ -386,7 +386,10 @@
   function cleanUrl(u) {
     try {
       var url = new URL(u);
-      return (url.hostname.replace(/^www\./, "") + url.pathname).replace(/\/(apply|application)\/?$/i, "").replace(/\/+$/, "").toLowerCase();
+      var path = url.pathname.replace(/\/+$/, "");
+      // The posting, its form and its thank-you page are one job
+      while (/\/(apply|application|confirmation|thanks|thank-you|thankyou|submitted|success|review)$/i.test(path)) path = path.replace(/\/[^/]+$/, "");
+      return (url.hostname.replace(/^www\./, "") + path).toLowerCase();
     } catch (e) { return ""; }
   }
   function slug(s) { return norm(s).replace(/[^a-z0-9]+/g, ""); }
@@ -403,5 +406,5 @@
     return open.filter(function (j) { return j.company && parts.indexOf(slug(j.company)) >= 0; })[0] || null;
   }
 
-  root.Match = { CHOICES: CHOICES, classify: classify, suggest: suggest, confident: confident, search: search, items: items, choiceOf: choiceOf, bestOption: bestOption, formatDate: formatDate, dateLabel: dateLabel, jobForPage: jobForPage, norm: norm, zoneOf: zoneOf };
+  root.Match = { CHOICES: CHOICES, classify: classify, suggest: suggest, confident: confident, search: search, items: items, choiceOf: choiceOf, bestOption: bestOption, formatDate: formatDate, dateLabel: dateLabel, jobForPage: jobForPage, cleanUrl: cleanUrl, norm: norm, zoneOf: zoneOf };
 })(typeof window !== "undefined" ? window : globalThis);

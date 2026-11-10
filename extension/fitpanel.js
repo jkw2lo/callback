@@ -54,6 +54,7 @@
     });
     if (!best || best.result.jd.length < 200) { F.status = "none"; F.posting = null; return render(); }
     F.posting = Object.assign({}, best.result, { url: S.pageUrl });
+    Panel.keepPosting(F.posting);
     F.frameId = best.frameId || 0;
     await analyze();
     F.status = "ready";
@@ -260,9 +261,12 @@
         h("div", { cls: "row" }, h("button", { cls: "btn", type: "button", text: "Refresh", onclick: function () { read(true); } }))));
       return;
     }
+    var saved = Panel.savedNote();
+    if (saved) view.append(saved);
     view.append(report(F.report));
     view.append(h("div", { cls: "row fit-foot" }, h("button", { cls: "btn ghost", type: "button", id: "refreshFit", text: "Refresh", onclick: function () { read(true); } }),
       h("span", { cls: "small muted", text: "Highlight part of the page first to judge just that part." })));
+    view.append(h("div", { cls: "row fit-foot" }, h("button", { cls: "btn", type: "button", id: "fitSaveApplied", text: "Already applied? Save as Applied", onclick: function () { Panel.saveApplied(); } })));
   }
 
   // ---------- following the tab ----------

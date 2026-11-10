@@ -15,6 +15,8 @@
     profile: Profile.blank(), jobs: [], chosenJob: new Map(),
     picks: {}, remember: null, note: null, query: "", view: "fill",
     reqId: 0, pending: new Map(), result: null,
+    pageTitle: "",
+    saving: null, // Save as Applied: { status: "saving" | "saved" | "failed", saved }
     pass: null,   // filling in one go: { done, total, stopped }
     review: null  // what that filled and what it left: { filled: [], left: [] }
   };
@@ -56,6 +58,7 @@
     var tab;
     try { tab = await chrome.tabs.get(tabId); } catch (e) { S.access = "blocked"; return render(); }
     S.pageUrl = tab.url || "";
+    S.pageTitle = tab.title || "";
     if (!/^https?:/i.test(S.pageUrl) || /^https:\/\/chromewebstore\.google\.com/.test(S.pageUrl)) { S.access = "blocked"; return render(); }
     try {
       await chrome.tabs.sendMessage(tabId, { type: "callback-fill-hello" });
@@ -68,7 +71,7 @@
         S.access = "none";
       }
     }
-    if (S.tabId === tabId) { render(); tabChanged(); }
+    if (S.tabId === tabId) { render(); tabChanged(); if (S.access === "ok") rememberPosting(tabId); }
   }
   async function turnOnSite() {
     var origin = new URL(S.pageUrl).origin;
@@ -358,7 +361,8 @@
     }
     card.append(h("div", { cls: "row" },
       h("button", { cls: "btn solid", type: "button", id: "doneReview", text: "Done reviewing", onclick: finishReview }),
-      h("span", { cls: "small muted", text: "Attach your resume and submit it yourself." })));
+      h("span", { cls: "small muted", text: "Attach your resume and submit it yourself." })),
+      h("div", { cls: "row" }, saveAppliedButton(false), h("span", { cls: "small muted", text: "once you've submitted it" })));
     return card;
   }
   function fillAllButton(solid) {
@@ -422,6 +426,110 @@
   function addJob() {
     chrome.runtime.sendMessage({ type: "capture-tab", tabId: S.tabId });
   }
+
+  // ---------- remembering postings, for Save as Applied ----------
+  // The description is usually on the posting, not on the form or the thank-you page after it,
+  // so each posting you open is kept for a while (the 30 most recent, in this browser only).
+  async function readPage(tabId) {
+    try {
+      var results = await chrome.scripting.executeScript({ target: { tabId: tabId, allFrames: true }, files: ["extract.js"] });
+      var best = null;
+      (results || []).forEach(function (r) {
+        if (r && r.result && (!best || (r.result.jd || "").length > (best.jd || "").length)) best = r.result;
+      });
+      return best;
+    } catch (e) { return null; }
+  }
+  async function keepPosting(posting) {
+    if (!posting || !posting.url || (posting.jd || "").length < 200) return;
+    var key = Match.cleanUrl(posting.url);
+    var all = (await chrome.storage.local.get("postings")).postings || {};
+    all[key] = { url: posting.url, title: posting.title || "", company: posting.company || "", location: posting.location || "", pay: posting.pay || "", jd: String(posting.jd).slice(0, 30000), at: Date.now() };
+    Object.keys(all).sort(function (a, b) { return all[b].at - all[a].at; }).slice(30).forEach(function (k) { delete all[k]; });
+    await chrome.storage.local.set({ postings: all });
+  }
+  async function rememberPosting(tabId) {
+    var url = S.pageUrl;
+    var found = await readPage(tabId);
+    if (found && S.tabId === tabId) keepPosting(Object.assign({}, found, { url: url }));
+  }
+  async function postingFor(url) {
+    var key = Match.cleanUrl(url);
+    var all = (await chrome.storage.local.get("postings")).postings || {};
+    if (all[key]) return all[key];
+    var near = Object.keys(all).filter(function (k) { return key.indexOf(k + "/") === 0 || k.indexOf(key + "/") === 0; })
+      .sort(function (a, b) { return all[b].at - all[a].at; })[0];
+    return near ? all[near] : null;
+  }
+  function looksSubmitted() {
+    return /\/(confirmation|thanks|thank-you|thankyou|submitted|success)\b/i.test(S.pageUrl) ||
+      /thank(s| you) for (applying|your application|your interest)|application (received|submitted|complete)|you('ve| have) applied/i.test(S.pageTitle);
+  }
+
+  // ---------- Save as Applied ----------
+  async function saveApplied() {
+    if (S.saving && S.saving.status === "saving") return;
+    S.saving = { status: "saving", started: Date.now() };
+    render();
+    var here = await readPage(S.tabId);
+    var kept = await postingFor(S.pageUrl);
+    var fresh = here && (here.jd || "").length >= 200 ? here : null;
+    if (fresh) keepPosting(Object.assign({}, fresh, { url: S.pageUrl }));
+    // The posting's own details beat the form's or the thank-you page's
+    var base = kept || fresh || here || {};
+    var posting = {
+      company: base.company || (here && here.company) || "",
+      title: base.title || (here && here.title) || "",
+      location: base.location || (here && here.location) || "",
+      pay: base.pay || (here && here.pay) || "",
+      jd: [kept && kept.jd, fresh && fresh.jd].filter(Boolean).sort(function (a, b) { return b.length - a.length; })[0] || "",
+      url: kept ? kept.url : S.pageUrl.replace(/\/(apply|application|confirmation|thanks|thank-you|submitted|success)\/?(\?.*)?$/i, "")
+    };
+    var fit = null;
+    if (posting.jd.length >= 200 && S.profile.jobs.length) {
+      var report = Fit.analyze(posting, S.profile);
+      var cache = (await chrome.storage.local.get("fitCache")).fitCache || {};
+      var ai = cache[posting.url];
+      if (ai) report = Fit.merge(report, ai.ai);
+      if (report.fit != null) {
+        fit = {
+          score: report.fit, callback: report.callback || "", source: report.source, at: Date.now(),
+          gaps: report.lines.filter(function (l) { return l.verdict === "gap"; }).slice(0, 3).map(function (l) { return l.text.replace(/^[•\-–*\s]+/, "").slice(0, 200); })
+        };
+      }
+    }
+    var job = currentJob();
+    var started = S.saving.started;
+    chrome.runtime.sendMessage({ type: "save-applied", draft: Object.assign(posting, { fit: fit, tag: job ? job.tag : "" }) });
+    setTimeout(function () {
+      if (S.saving && S.saving.status === "saving" && S.saving.started === started) { S.saving = { status: "failed" }; render(); }
+    }, 20000);
+  }
+  function savedNote() {
+    var s = S.saving;
+    if (!s) return null;
+    if (s.status === "saving") return h("div", { cls: "note", id: "savedNote", role: "status", text: "Saving to your board…" });
+    if (s.status === "failed") return h("div", { cls: "note warn", id: "savedNote", role: "status", text: "Your board didn't answer. Open it and check, or try again." });
+    var x = s.saved;
+    var name = [x.company, x.title].filter(Boolean).join(", ") || "This job";
+    var text = x.outcome === "added" ? "Saved to your board as Applied: " + name + "."
+      : x.outcome === "moved" ? "Moved " + name + " to Applied on your board."
+      : name + " was already on your board, under " + x.stage + ".";
+    return h("div", { cls: "note", id: "savedNote", role: "status" }, h("div", { text: text }),
+      h("div", { cls: "row" },
+        h("button", { cls: "btn", type: "button", id: "openBoard", text: "Open board", onclick: function () { chrome.runtime.sendMessage({ type: "show-board" }); } }),
+        h("button", { cls: "btn ghost", type: "button", text: "OK", onclick: function () { S.saving = null; render(); } })));
+  }
+  function saveAppliedButton(solid) {
+    return h("button", { cls: "btn" + (solid ? " solid" : ""), type: "button", id: "saveApplied", text: "Save as Applied", disabled: !!(S.saving && S.saving.status === "saving"), onclick: saveApplied });
+  }
+  chrome.storage.onChanged.addListener(function (changes, area) {
+    if (area !== "session" || !changes.lastSaved || !changes.lastSaved.newValue) return;
+    if (!S.saving || S.saving.status !== "saving") return;
+    S.saving = { status: "saved", saved: changes.lastSaved.newValue };
+    render();
+    if (window.FitPanel) window.FitPanel.render();
+  });
 
   // ---------- drawing ----------
   function pickRow(pick, opts) {
@@ -536,6 +644,8 @@
     }
 
     view.append(notes());
+    var saved = savedNote();
+    if (saved) view.append(saved);
     view.append(jobBar());
 
     if (S.field && !S.pass) {
@@ -550,7 +660,7 @@
       view.append(h("div", { cls: "card", id: "endCard" },
         h("h2", { text: "No more empty fields here" }),
         h("p", { cls: "muted", text: "Look it over, attach your resume and submit it yourself. If there's another page, click its first field." }),
-        h("div", { cls: "row" }, fillAllButton(false))));
+        h("div", { cls: "row" }, fillAllButton(false), saveAppliedButton(false))));
     } else if (totals().total) {
       view.append(h("div", { cls: "card", id: "startCard" },
         h("h2", { text: "Fill the form in one go" }),
@@ -558,11 +668,16 @@
         h("div", { cls: "row" }, fillAllButton(true)),
         h("p", { cls: "muted small or", text: "Or go field by field: click one on the form, or" }),
         h("div", { cls: "row" }, h("button", { cls: "btn", type: "button", id: "startBtn", text: "Start at the first empty field", onclick: start }))));
+    } else if (looksSubmitted()) {
+      view.append(h("div", { cls: "card", id: "submittedCard" },
+        h("h2", { text: "Sent your application?" }),
+        h("p", { cls: "muted", text: "Save it to your board as Applied, with the job description and how it fit." }),
+        h("div", { cls: "row" }, saveAppliedButton(true))));
     } else {
       view.append(h("div", { cls: "card", id: "noFormCard" },
         h("h2", { text: "No form on this page" }),
         h("p", { cls: "muted", text: "Open the application form. Many postings have an Apply button first." }),
-        h("div", { cls: "row" }, h("button", { cls: "btn", type: "button", id: "seeFit", text: "See how this job fits you", onclick: function () { showView("fit"); } }))));
+        h("div", { cls: "row" }, h("button", { cls: "btn", type: "button", id: "seeFit", text: "See how this job fits you", onclick: function () { showView("fit"); } }), saveAppliedButton(false))));
     }
 
     if (S.pass) return;
@@ -632,7 +747,14 @@
   });
   chrome.tabs.onUpdated.addListener(function (tabId, change) {
     if (tabId !== S.tabId) return;
+    // A new page in the same tab: what was true of the last form no longer is
+    if (change.status === "loading") {
+      if (S.pass) S.pass.stopped = true;
+      S.review = null; S.field = null; S.atEnd = false; S.result = null; S.remember = null;
+      render();
+    }
     if (change.url) { S.pageUrl = change.url; renderJob(); tabChanged(); }
+    if (change.title) { S.pageTitle = change.title; if (!S.field && !S.review) render(); }
     if (change.status === "complete" && !S.ports.size) attach(tabId);
   });
 
@@ -644,6 +766,9 @@
     saveProfile: saveProfile,
     showView: showView,
     turnOnSite: turnOnSite,
+    saveApplied: saveApplied,
+    savedNote: savedNote,
+    keepPosting: keepPosting,
     formFields: function () { var n = 0; S.frames.forEach(function (f) { n += f.total || 0; }); return n; }
   };
 

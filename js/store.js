@@ -56,6 +56,19 @@ window.Store = (function () {
   // ---------- shaping ----------
   var text = function (v, max) { return typeof v === "string" ? v.slice(0, max) : ""; };
   var num = function (v) { return typeof v === "number" && isFinite(v) ? v : 0; };
+  // How the job fit when you applied, from the extension's Fit tab
+  function cleanFit(f) {
+    if (!f || typeof f !== "object") return null;
+    var score = Math.round(Number(f.score));
+    if (!(score >= 0 && score <= 100)) return null;
+    return {
+      score: score,
+      callback: ["low", "medium", "high"].indexOf(f.callback) >= 0 ? f.callback : "",
+      source: f.source === "claude" ? "claude" : "built-in",
+      gaps: (Array.isArray(f.gaps) ? f.gaps : []).slice(0, 5).map(function (g) { return text(g, 200); }).filter(Boolean),
+      at: num(f.at)
+    };
+  }
   function newId() {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
@@ -89,6 +102,7 @@ window.Store = (function () {
       followUp: /^\d{4}-\d{2}-\d{2}$/.test(raw.followUp || "") ? raw.followUp : "",
       notes: text(raw.notes, 20000),
       jd: text(raw.jd, 30000),
+      fit: cleanFit(raw.fit),
       history: (Array.isArray(raw.history) ? raw.history : []).slice(-50).filter(function (h) {
         return h && STAGE_IDS.indexOf(h.stage) >= 0 && num(h.at);
       }).map(function (h) { return { stage: h.stage, at: h.at }; }),

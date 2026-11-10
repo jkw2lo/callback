@@ -69,7 +69,7 @@
     if (job.followUp && job.stage !== "closed") {
       bits += '<span class="follow' + (isDue(job) ? " due" : "") + '">Follow up ' + esc(shortDate(dateFromInput(job.followUp))) + "</span>";
     }
-    var meta = [job.location, job.pay].filter(Boolean).join(" · ");
+    var meta = [job.fit ? job.fit.score + "% fit" : "", job.location, job.pay].filter(Boolean).join(" · ");
     return '<article class="card" role="button" tabindex="0" draggable="true" data-job="' + esc(job.id) + '">' +
       '<div class="card-company">' + esc(job.company || "Company not set") + "</div>" +
       (job.title ? '<div class="card-title">' + esc(job.title) + "</div>" : "") +
@@ -226,7 +226,10 @@
     if (!current) return;
     line.textContent = current.history.map(function (h) {
       return Store.STAGES.filter(function (s) { return s.id === h.stage; })[0].label + " " + shortDate(new Date(h.at));
-    }).join(" → ");
+    }).join(" → ") + (current.fit
+      ? ". Fit when you applied: " + current.fit.score + "% (" + (current.fit.source === "claude" ? "Claude's reading" : "built-in estimate") + ")" +
+        (current.fit.gaps.length ? ". Gaps: " + current.fit.gaps.join("; ") : "") + "."
+      : "");
   }
   // switches the form's buttons between adding a new job and editing a saved one
   function setMode() {
@@ -448,6 +451,7 @@
   // page was captured, so they go into the form as plain values and wait for review.
   function receiveDraft(d) {
     if (!d || typeof d !== "object") return;
+    if (d.autoSave) return saveApplied(d);
     var draft = {};
     ["company", "title", "location", "pay", "url", "jd"].forEach(function (k) {
       if (typeof d[k] === "string") draft[k] = d[k];
@@ -456,6 +460,33 @@
     if (jobDialog.open && hasDraftContent()) { pendingDrafts.push(draft); return; }
     if (jobDialog.open) { flushSave(); current = null; }
     openNew(draft);
+  }
+  // "Save as Applied" in the side panel: you've just applied, so there's nothing to review.
+  // A job already on the board moves to Applied (never backwards) instead of being added twice.
+  function saveApplied(d) {
+    var fields = {};
+    ["company", "title", "location", "pay", "url", "jd"].forEach(function (k) {
+      if (typeof d[k] === "string") fields[k] = d[k];
+    });
+    if (fields.url && !safeUrl(fields.url)) delete fields.url;
+    var fit = d.fit && typeof d.fit === "object" ? d.fit : null;
+    var existing = (typeof d.tag === "string" && Store.all().filter(function (j) { return j.tag === d.tag; })[0]) || Store.findDuplicate(fields);
+    var job, outcome;
+    if (existing) {
+      var patch = {};
+      if (existing.stage === "saved") patch.stage = "applied";
+      ["company", "title", "location", "pay", "url", "jd"].forEach(function (k) { if (!existing[k] && fields[k]) patch[k] = fields[k]; });
+      if (fit && (!existing.fit || fit.source === "claude")) patch.fit = fit;
+      job = Store.update(existing.id, patch) || existing;
+      outcome = existing.stage === "saved" ? "moved" : "already";
+    } else {
+      job = Store.add(Object.assign(fields, { stage: "applied", fit: fit }));
+      outcome = "added";
+    }
+    var stage = Store.STAGES.filter(function (s) { return s.id === job.stage; })[0];
+    window.postMessage({ source: "callback-page", type: "saved", saved: {
+      outcome: outcome, company: job.company, title: job.title, tag: job.tag, stage: stage ? stage.label : job.stage
+    } }, location.origin);
   }
   function sayReady() { window.postMessage({ source: "callback-page", type: "ready" }, location.origin); }
   // So the side panel can offer the right tracked link on an application form. Only these

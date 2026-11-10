@@ -130,6 +130,13 @@ export const FORMS = {
   "https://jobs.lever.co/picky/1/apply": page("<title>x</title>",
     select("q_school", "School", "Harvard|Yale") + '<label for="z">Email</label><input id="z"><script>document.getElementById("z").addEventListener("input",(e)=>{e.target.value="";});</script>' + QUIRKS),
 
+  // Lever's posting page for the form above, and the page after you submit
+  "https://jobs.lever.co/northwind/abc-1": page("<title>Northwind - Senior Researcher</title>",
+    '<div class="posting-headline"><h2>Senior Researcher</h2><div class="posting-categories"><div class="location">Brooklyn, NY</div></div></div>' +
+    '<div class="posting-page"><div class="content"><p>Northwind is a research group that helps city agencies understand how people move, and this role leads studies end to end.</p>' +
+    '<h3>Requirements</h3><ul><li>3+ years of experience with SQL and Python for analysis</li><li>Experience with Kubernetes and Terraform</li></ul></div></div>'),
+  "https://jobs.lever.co/northwind/abc-1/thanks": page("<title>Application submitted - Northwind</title>", "<h1>Thanks for applying!</h1><p>We'll be in touch.</p>"),
+
   // A posting with no form: the Fit tab's report card
   "https://job-boards.greenhouse.io/acme/jobs/9": page("<title>Senior Data Engineer at Acme</title>",
     '<h1>Senior Data Engineer</h1><div class="job__location">Remote (US)</div><div class="job__description">' +
@@ -694,6 +701,58 @@ export async function runAutofill({ context, sw, check, eq, section, RESULTS, RO
   check("closing the panel removes the marks", true);
   await post.form.close();
   await sw.evaluate(() => chrome.storage.local.remove("settings"));
+
+  section("Save as Applied");
+  const boardJobs = async () => {
+    const b = context.pages().find((p) => p.url().startsWith("http://127.0.0.1:8765/callback/"));
+    return b ? b.evaluate(() => Store.all().map((j) => ({ id: j.id, company: j.company, title: j.title, stage: j.stage, url: j.url, jd: j.jd, fit: j.fit, history: j.history.length }))) : [];
+  };
+  const flow = await open("https://jobs.lever.co/northwind/abc-1");
+  await sw.evaluate(() => new Promise((ok) => {
+    (function poll() { chrome.storage.local.get("postings").then((r) => (r.postings && r.postings["jobs.lever.co/northwind/abc-1"] ? ok() : setTimeout(poll, 50))); })();
+  }));
+  check("an opened posting is remembered for later", true);
+  await flow.form.goto("https://jobs.lever.co/northwind/abc-1/apply");
+  await flow.panel.waitForFunction(() => Panel.state.view === "fill" && Panel.formFields() > 0);
+  await flow.panel.locator("#fillAll").click();
+  await flow.panel.waitForSelector("#doneReview", { timeout: 20000 });
+  const quietOpens = context.waitForEvent("page");
+  await flow.panel.locator("#saveApplied").click();
+  const quietBoard = await quietOpens;
+  await flow.panel.waitForFunction(() => { const n = document.getElementById("savedNote"); return n && /Saved to your board/.test(n.textContent); }, null, { timeout: 15000 });
+  eq("Save as Applied adds the job straight to the board", (await flow.panel.locator("#savedNote").textContent()).split(".")[0], "Saved to your board as Applied: Northwind, Senior Researcher");
+  const boardTabActive = await sw.evaluate(async () => (await chrome.tabs.query({})).find((t) => t.url.startsWith("http://127.0.0.1:8765/callback/")).active);
+  check("...in the background, without leaving the form", boardTabActive === false);
+  let onBoard = (await boardJobs()).find((j) => j.company === "Northwind");
+  check("...as Applied, with no review dialog", onBoard && onBoard.stage === "applied" && !(await quietBoard.locator("#jobDialog[open]").count()), onBoard);
+  eq("...using the posting's address, not the form's", onBoard.url, "https://jobs.lever.co/northwind/abc-1");
+  check("...with the description from the posting you opened earlier", onBoard.jd.includes("Kubernetes and Terraform"));
+  check("...and how it fit", onBoard.fit && typeof onBoard.fit.score === "number" && onBoard.fit.gaps.some((g) => g.includes("Kubernetes")), onBoard.fit);
+  await quietBoard.bringToFront();
+  check("the card shows the fit", (await quietBoard.locator('[data-stage="applied"]').textContent()).includes(onBoard.fit.score + "% fit"));
+  await quietBoard.locator('[data-stage="applied"] .card', { hasText: "Northwind" }).click();
+  check("...and the job shows the fit and its gaps", (await quietBoard.locator("#historyLine").textContent()).includes("Fit when you applied: " + onBoard.fit.score + "%"));
+  await quietBoard.locator("#jobClose").click();
+
+  await flow.form.goto("https://jobs.lever.co/northwind/abc-1/thanks");
+  await flow.panel.waitForSelector("#submittedCard");
+  check("the thank-you page offers to save it", (await flow.panel.locator("#submittedCard").textContent()).includes("Sent your application?"));
+  await flow.panel.locator("#saveApplied").click();
+  await flow.panel.waitForFunction(() => /already on your board/.test((document.getElementById("savedNote") || {}).textContent || ""));
+  eq("saving twice doesn't add it twice", (await boardJobs()).filter((j) => j.company === "Northwind").length, 1);
+  await closeAll(flow);
+
+  const savedFirst = await quietBoard.evaluate(() => Store.add({ company: "Acme", title: "Senior Data Engineer", url: "https://job-boards.greenhouse.io/acme/jobs/9", stage: "saved" }).id);
+  const fitPost = await open("https://job-boards.greenhouse.io/acme/jobs/9");
+  await fitPost.panel.waitForSelector("#fitSaveApplied", { timeout: 8000 });
+  await fitPost.panel.locator("#fitSaveApplied").click();
+  await fitPost.panel.waitForFunction(() => /Moved Acme/.test((document.getElementById("savedNote") || {}).textContent || ""), null, { timeout: 15000 });
+  onBoard = (await boardJobs()).find((j) => j.id === savedFirst);
+  check("a job you'd onBoard moves to Applied instead", onBoard.stage === "applied" && onBoard.history === 2, onBoard);
+  check("...carrying Claude's reading when there is one", onBoard.fit && onBoard.fit.source === "claude" && onBoard.fit.score === 81, onBoard.fit);
+  await closeAll(fitPost);
+  await quietBoard.evaluate(() => Store.all().forEach((j) => { if (j.company === "Northwind" || j.company === "Acme") Store.remove(j.id); }));
+  await quietBoard.close();
 
   section("Autofill: other pages");
   const custom = await open("https://careers.custom.example/apply");

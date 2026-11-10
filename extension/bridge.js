@@ -19,6 +19,7 @@
       deliver();
     }
     if (e.data.type === "jobs") chrome.runtime.sendMessage({ type: "board-jobs", jobs: e.data.jobs });
+    if (e.data.type === "saved") chrome.runtime.sendMessage({ type: "board-saved", saved: e.data.saved });
   });
 
   chrome.runtime.onMessage.addListener(function (message) {

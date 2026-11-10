@@ -63,6 +63,27 @@ async function capture(info, tab) {
   await showBoard(tab);
 }
 
+// "Save as Applied": hand the job to the board without taking you away from the page you're on
+async function saveQuietly(draft) {
+  const text = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
+  const clean = {
+    company: text(draft.company, 120), title: text(draft.title, 160), location: text(draft.location, 120),
+    pay: text(draft.pay, 80), url: /^https?:\/\//i.test(draft.url || "") ? text(draft.url, 2000) : "", jd: text(draft.jd, 30000),
+    tag: /^[a-z0-9-]{1,16}$/i.test(draft.tag || "") ? draft.tag : "",
+    fit: draft.fit && typeof draft.fit === "object" ? draft.fit : null,
+    autoSave: true
+  };
+  await chrome.storage.session.set({ draft: clean });
+  const url = await boardUrl();
+  const [open] = await chrome.tabs.query({ url: url + "*" });
+  if (open) {
+    try { await chrome.tabs.sendMessage(open.id, { type: "draft-ready" }); }
+    catch (e) { await chrome.tabs.reload(open.id); }
+    return;
+  }
+  await chrome.tabs.create({ url, active: false });
+}
+
 async function showBoard(fromTab) {
   const url = await boardUrl();
   const [open] = await chrome.tabs.query({ url: url + "*" });
@@ -120,6 +141,22 @@ chrome.runtime.onMessage.addListener((message, sender, reply) => {
       if (sender.url && sender.url.startsWith(url)) chrome.storage.local.set({ boardJobs: cleanJobs(message.jobs) });
     });
     return false;
+  }
+  // The board says what it saved, for the side panel
+  if (message.type === "board-saved") {
+    boardUrl().then((url) => {
+      if (!sender.url || !sender.url.startsWith(url) || !message.saved) return;
+      const s = message.saved;
+      const text = (v, max) => String(v == null ? "" : v).slice(0, max);
+      chrome.storage.session.set({ lastSaved: { outcome: text(s.outcome, 10), company: text(s.company, 120), title: text(s.title, 160), stage: text(s.stage, 20), tag: text(s.tag, 16), at: Date.now() } });
+    });
+    return false;
+  }
+  if (message.type === "save-applied" || message.type === "show-board") {
+    if (!sender.url || !sender.url.startsWith(chrome.runtime.getURL(""))) return false;
+    if (message.type === "save-applied") saveQuietly(message.draft || {}).then(() => reply({ ok: true }), () => reply({ ok: false }));
+    else chrome.tabs.query({ active: true, lastFocusedWindow: true }).then(([tab]) => showBoard(tab || { index: 0 })).then(() => reply({ ok: true }), () => reply({ ok: false }));
+    return true;
   }
   // "Add this job" in the side panel
   if (message.type === "capture-tab") {
