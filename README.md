@@ -94,10 +94,11 @@ application form opens on it by itself.
   lines are marked on the page in green, amber and red; hover one for its reason, or click it in the
   panel to scroll to it. The marks come off when you close the panel.
 
-**Built-in estimate:** free, instant and private. It matches the words in each line against your work
-history, education, skills and summary, weighting named tools and skills over ordinary words. It
-can't tell that different wording means the same experience, so lines about how you work ("leads with
-humility") are left unjudged, and the scores are rough.
+**Built-in estimate:** free, instant and private. It matches each line against your work history, education,
+skills and summary. Everyday words are ignored, named tools and skills count most, and related wording
+earns partial credit ("policy" against your "governance", "catalogue" against "catalog"), with the note
+saying which of your words it matched. Lines about how you work ("leads with humility") are left
+unjudged. It's still a rough read; Claude's is the one to trust for nuance.
 
 **Claude's reading (optional):** paste your own Claude API key under My info → Claude analysis, then press
 **Analyze with Claude** on a posting. Claude judges each line by meaning and gives its own score, level,

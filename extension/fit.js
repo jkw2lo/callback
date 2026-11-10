@@ -24,6 +24,9 @@
     "tableau", "power bi", "looker", "excel", "pandas", "numpy", "pytorch", "tensorflow", "scikit-learn", "machine learning", "deep learning", "large language models",
     "generative ai", "artificial intelligence", "natural language processing", "computer vision", "rag", "embeddings", "statistics", "statistical", "modeling", "algorithms",
     "data science", "ab testing", "experimentation", "backend", "frontend", "full stack", "distributed systems", "infrastructure", "security", "cloud", "devops", "sre"];
+  // Everyday words that say nothing about a skill: left out so they can't count as gaps
+  var COMMON = words("develop develops developing development deliver delivers evaluate evaluating integrate integrating integration solution solutions enterprise build-out buying buy wide-ranging able about above accept access according account achieve acquire act action active actively activities activity actual add added adding address adjust advance advantage affect after again against ahead aim allow almost along already always among amount another answer anticipate anyone anything apply approach approaches appropriate area areas around arrive ask aspects assess assist assume attend attention available avoid aware away back balance balancing bar based basis become becoming before begin behalf behind believe benefit best better between beyond big billion billions bit bold both bottom breadth break breaking bring broad broader brings bring call care career carry case cases cause center central certain challenge challenges challenging chance change changing check choose clarity clear clearly close closely come comes comfort comfortable coming commit commitment common complete complex comprehensive concept concepts concrete confidence confident connect consider consistent constantly contribute contribution core correct could create creating creative creativity critical curious current currently daily deal decide decisions deep deeply define defining degree deliver depth desire detail detailed details determine different difficult direction discover diverse done down drive driven due during dynamic each early ease easily easy effective effectively efficient effort efforts either else embrace emerging enable enabling encourage end ends energy enjoy enough entire equally especially essential establish even ever every everyone everything evolve evolving exactly example excel exceptional excited exciting exist existing expand expect expected explain explore extend extensive extremely face fact fair far fast feel few find finding first fit flexible focus focused follow following form forward foster free fresh front full fully fun future gain general get getting give given global goal goals going grow growing growth guide hand handle happen hard help here hold huge idea ideas identify impact impactful important improve include individual influence information initial innovative inside insight instead interest interested internal introduce involve involved issue issues itself job join just keep key kind know known large largely last late latest launch lead learn least leave less level life like likely limited line little live long look looking lot love low main maintain major make makes making many matter maximize mean meaningful means measure meet member members mind minimum mission mix model modern moment more move moving much multiple must name natural nature navigate near necessary need needed needs never next nice none normal note nothing number numerous objective offer often once ongoing open order organization organizations others outcome outcomes outside overall own pace part particular particularly party passion past path people perform period person personal perspective pick place plan play plenty plus point positive possible potential power practical practice prefer present pressure pretty previous primary prior proactive proactively problem problems process produce progress project projects promote proud prove provide purpose push put quality question questions quick quickly quite range rapid rapidly rate rather reach read ready real really reason receive recent recognize reduce regular related relevant rely remain repeat require required resolve respond responsible rest result results right rigorous rise risk role run safe same scale second see seek seen select sense serve set setting several shape share short show significant similar simple since single situation size small smart solid solve something sometimes soon sort space speak special specific speed spend stand standard start state stay step still stop strong structure stuff success successful such sure surface take taking talent task tasks term terms thing things think thoughtful thrive through throughout together top toward towards track true trust try turn type types typical understand unique unit unlock until update upon urgency usually value valued values variety various view vision visible want way ways whole wide wider willing win wish without wonderful word works world worth write year yes yet");
+
   var CODING = /\b(write|writing|ship|shipping)\s+(production\s+)?code\b|\bcoding\b|\bprogramming\b|\bsoftware engineer|\bhands-on (technical|coding|engineering)\b|\bcode reviews?\b/;
 
   function words(s) { var o = {}; s.split(/\s+/).forEach(function (w) { if (w) o[w] = true; }); return o; }
@@ -58,7 +61,7 @@
     });
     t.split(/[\s/.,-]+/).forEach(function (w) {
       w = w.replace(/^[.#/]+|[./]+$/g, "");
-      if (!w || STOP[w] || GENERIC[w] || /^\d+\+?$/.test(w)) return;
+      if (!w || STOP[w] || GENERIC[w] || COMMON[w] || /^\d+\+?$/.test(w)) return;
       if (w.length < 3 && TECH.indexOf(w) < 0) return;
       var key = stem(w);
       if (!shown[key]) shown[key] = w;
@@ -78,6 +81,34 @@
     });
     return function (k) { return TECH.indexOf(k) >= 0 || named[k] ? 3 : 1; };
   }
+
+  // Words that mean much the same thing on a resume: a job asking for one is partly met by another.
+  // "+" joins the words of a phrase.
+  var FAMILIES = [
+    ["lead", "lead leader leadership manage manager management managed oversee oversaw head headed direct directed spearhead own owner ownership"],
+    ["strategy", "strategy strategic roadmap roadmaps vision planning plan prioritize prioritization priorities"],
+    ["stakeholders", "executive executives c-suite alignment align influence influencing cross-functional leadership senior+leadership"],
+    ["adoption", "adoption rollout enablement onboarding training change+management upskilling literacy"],
+    ["governance", "governance policy policies compliance regulatory regulation controls responsible ethics ethical safety risk audit"],
+    ["ai", "artificial+intelligence generative+ai large+language+models machine+learning chatgpt copilot gpt claude gemini agents agentic prompt prompting"],
+    ["analytics", "analytics analysis analyze analyzed analytical analyst analysts insight insights reporting reports metrics kpi dashboard dashboards business+intelligence tableau power+bi looker"],
+    ["data", "data dataset datasets database databases warehouse data+warehouse data+pipelines etl sql catalog catalogue metadata lineage"],
+    ["product", "product products product+management feature features requirements discovery user+research mvp"],
+    ["experiment", "experiment experiments experimentation ab+testing hypothesis hypotheses"],
+    ["automation", "automation automate automated workflow workflows process+improvement efficiency operations operational"],
+    ["finance", "finance financial budget budgets forecasting forecast valuation investment investments portfolio"],
+    ["delivery", "program programs project+management delivery execution execute initiative initiatives implementation implement deploy deployment"],
+    ["platform", "platform platforms infrastructure tooling"],
+    ["engineering", "engineering engineers technical developer developers software"],
+    ["communication", "communicate communication communicator present presentation presentations storytelling writing articulate"],
+    ["people", "mentor mentoring mentorship coach coaching hire hiring team+building people+management direct+reports"],
+    ["cloud", "amazon+web+services azure google+cloud cloud"],
+    ["customer", "customer customers client clients partner partners vendor vendors"]
+  ];
+  var FAMILY = {};
+  FAMILIES.forEach(function (f) {
+    f[1].split(" ").forEach(function (w) { FAMILY[w.indexOf("+") >= 0 ? w.replace(/\+/g, " ") : stem(w)] = f[0]; });
+  });
 
   // ---------- you ----------
   function monthsBetween(a, b) {
@@ -106,9 +137,24 @@
     p.education.forEach(function (e) { text.push(e.degree, e.field, e.school); });
     text.push(p.texts && p.texts.skills, p.texts && p.texts.summary);
     (p.saved || []).forEach(function (s) { if ((s.a || "").length > 80) text.push(s.a); });
-    var have = {};
-    terms(text.filter(Boolean).join("\n")).forEach(function (w) { have[w] = true; });
+    var have = { list: [], families: {} };
+    terms(text.filter(Boolean).join("\n")).forEach(function (w) {
+      have[w] = true;
+      have.list.push(w);
+      if (FAMILY[w] && !have.families[FAMILY[w]]) have.families[FAMILY[w]] = shown[w] || w;
+    });
     return have;
+  }
+  // How well your experience covers one term: exactly, through a related word, or not at all
+  function cover(w, have) {
+    if (have[w]) return { credit: 1 };
+    if (FAMILY[w] && have.families[FAMILY[w]]) return { credit: 0.5, via: have.families[FAMILY[w]] };
+    // The same word in another form: catalogue and catalog, analytical and analytics
+    if (w.length >= 7) {
+      var close = have.list.filter(function (x) { return x.length >= 7 && x.slice(0, 7) === w.slice(0, 7) && Math.abs(x.length - w.length) <= 3; })[0];
+      if (close) return { credit: 0.5, via: shown[close] || close };
+    }
+    return { credit: 0 };
   }
   function degreeLevel(s) {
     var t = lower(s);
@@ -167,10 +213,20 @@
 
       var found = terms(text).filter(function (w) { return !company[w]; });
       var weigh = weights(text);
-      var hit = found.filter(function (w) { return have[w]; });
-      var miss = found.filter(function (w) { return !have[w]; });
-      var sum = function (list) { return list.reduce(function (n, w) { return n + weigh(w); }, 0); };
-      var ratio = found.length ? sum(hit) / sum(found) : 0;
+      var covered = {};
+      found.forEach(function (w) { covered[w] = cover(w, have); });
+      var hit = found.filter(function (w) { return covered[w].credit > 0; });
+      var miss = found.filter(function (w) { return !covered[w].credit; });
+      var total = found.reduce(function (n, w) { return n + weigh(w); }, 0);
+      var ratio = total ? found.reduce(function (n, w) { return n + weigh(w) * covered[w].credit; }, 0) / total : 0;
+      // "governance (you have policy)" when the match is a related word
+      var sayHit = function (list) {
+        return say(list).split(", ").map(function (word, idx) {
+          var k = list.slice().sort(function (a, b) { return (TECH.indexOf(b) >= 0) - (TECH.indexOf(a) >= 0); })[idx];
+          var c = covered[k];
+          return c && c.via && c.via !== word ? word + " (you have " + c.via + ")" : word;
+        }).join(", ");
+      };
       var asked = YEARS.exec(text);
       var wantsDegree = /\b(bachelor|master|ph\.?d|degree)\b/i.test(text) ? degreeLevel(text) : 0;
 
@@ -186,10 +242,10 @@
         if (asked) out.note = "You have about " + years + " years.";
       } else if (ratio >= 0.55) {
         out.verdict = "strong";
-        out.note = "In your experience: " + say(hit.slice(0, 4)) + ".";
+        out.note = "In your experience: " + sayHit(hit.slice(0, 4)) + ".";
       } else if (ratio >= 0.25) {
         out.verdict = "partial";
-        out.note = "You have " + say(hit).split(", ").slice(0, 3).join(", ") + "; not " + say(miss).split(", ").slice(0, 3).join(", ") + ".";
+        out.note = "You have " + sayHit(hit.slice(0, 3)) + "; not " + say(miss).split(", ").slice(0, 3).join(", ") + ".";
       } else if (miss.some(function (w) { return weigh(w) > 1; })) {
         out.verdict = "gap";
         out.note = "Not in your saved experience: " + say(miss.filter(function (w) { return weigh(w) > 1; }).concat(miss.filter(function (w) { return weigh(w) === 1; })).slice(0, 4)) + ".";
